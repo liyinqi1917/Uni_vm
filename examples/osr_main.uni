@@ -1,0 +1,8 @@
+# M4b main 帧 OSR：顶层循环回边超阈值 → MainDone 路径
+let s = 0;
+let i = 0;
+while (i < 2000000) {
+  s = s + i;
+  i = i + 1;
+}
+print s;

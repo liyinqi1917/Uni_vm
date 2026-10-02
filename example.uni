@@ -1,0 +1,6 @@
+# UniVM 示例程序
+let x = 10 + 20 * 2;
+print x;
+print x - 5;
+let y = (x + 3) * 2;
+print y;

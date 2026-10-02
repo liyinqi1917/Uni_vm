@@ -1,0 +1,28 @@
+# M6 数组 + 追踪式 GC 演示
+let a = [5];
+let i = 0;
+while (i < len(a)) {
+  a[i] = i * i;
+  i = i + 1;
+}
+let s = 0;
+let j = 0;
+while (j < len(a)) {
+  s = s + a[j];
+  j = j + 1;
+}
+print s;
+
+# 制造大量垃圾：循环里分配 500 个数组，只保留最后一个
+let k = 0;
+let keep = [1];
+while (k < 500) {
+  let g = [10];
+  g[0] = k;
+  if (k == 499) {
+    keep = g;
+  }
+  k = k + 1;
+}
+print keep[0];
+print len(keep);

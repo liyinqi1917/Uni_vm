@@ -1,0 +1,26 @@
+# M2 控制流测试：while 累加 + if/else + else if + 全部比较运算
+let i = 0;
+let sum = 0;
+while (i < 5) {
+  sum = sum + i;
+  i = i + 1;
+}
+print sum;
+
+if (sum == 10) {
+  print 100;
+} else {
+  print 200;
+}
+
+if (i < 5) {
+  print 1;
+} else if (i == 5) {
+  print 2;
+} else {
+  print 3;
+}
+
+print 3 != 2;
+print 2 <= 2;
+print 5 > 6;

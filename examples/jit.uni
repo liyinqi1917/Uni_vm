@@ -1,0 +1,17 @@
+# M4 JIT 基准：work 被调用 3000 次（第 1000 次后进入 Tier 1 编译码）
+func work(n) {
+  let s = 0;
+  let i = 0;
+  while (i < n) {
+    s = s + i;
+    i = i + 1;
+  }
+  return s;
+}
+
+let k = 0;
+while (k < 3000) {
+  work(5000);
+  k = k + 1;
+}
+print work(100);

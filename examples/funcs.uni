@@ -1,0 +1,23 @@
+# M3 函数 + 栈帧测试
+func add(a, b) {
+  return a + b;
+}
+
+func fact(n) {
+  if (n <= 1) {
+    return 1;
+  }
+  return n * fact(n - 1);
+}
+
+func fib(n) {
+  if (n < 2) {
+    return n;
+  }
+  return fib(n - 1) + fib(n - 2);
+}
+
+print add(3, 4);
+print fact(5);
+print fact(10);
+print fib(10);

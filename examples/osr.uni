@@ -1,0 +1,13 @@
+# M4b OSR：heavy 只被调用一次（不会触发 1000 次调用的 Tier1），
+# 但内部循环回边超过 10000 → 栈上替换，迁移到编译码继续跑完。
+func heavy(n) {
+  let s = 0;
+  let i = 0;
+  while (i < n) {
+    s = s + i;
+    i = i + 1;
+  }
+  return s;
+}
+
+print heavy(2000000);
