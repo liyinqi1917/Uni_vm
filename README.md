@@ -1,4 +1,42 @@
-# UniVM — 通用字节码多目标编译器
+# UniVM
+
+UniVM 是一个多后端编译器实验项目。Uni 源码（或 Python 风格源码）编译成统一字节码，
+带分层 JIT 和追踪式 GC，可输出 C / C++ / Go / JAR 四种后端。
+M7 阶段正在推进 GraalVM Polyglot 跨语言互操作。
+
+## 快速开始
+
+    build.bat
+
+输出：
+
+    ==== UniVM 字节码 ====
+    MAIN:
+      PUSH 10
+      ...
+    ==== 执行结果（JIT 开）====
+    50
+    45
+    106
+
+跨语言互操作演示（需要 GraalVM JDK 21 + Maven 3.9+）：
+
+    cd polyglot
+    mvn compile exec:java
+
+输出：
+
+    ==== UniVM Polyglot Demo ====
+    [JS -> Java] addOne(41) = 42
+    [JS -> UniHeap] load(7) + load(35) = 44
+    [JS -> Java array] squares = 0 1 4 9 16
+    ==== Demo 完成 ====
+
+## 设计模型
+
+> 借鉴 JVM / GraalVM 模型：**每种语言写一个前端 → 全部落到同一套栈式字节码 → 一个 VM（解释器 + JIT）→ 多个后端输出**。
+> 不存在"一个编译器编译所有语言"；JVM 能跑 Java/Kotlin/Scala 靠的就是"多前端 + 单字节码 + 单 VM"。
+> # UniVM — 通用字节码多目标编译器
 
 > 借鉴 JVM / GraalVM 模型：**每种语言写一个前端 → 全部落到同一套栈式字节码 → 一个 VM（解释器 + JIT）→ 多个后端输出**。
 > 不存在"一个编译器编译所有语言"；JVM 能跑 Java/Kotlin/Scala 靠的就是"多前端 + 单字节码 + 单 VM"。
