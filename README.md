@@ -64,3 +64,18 @@ java Main <input.uni|input.py> [--run] [--ir] [--profile] [--no-jit] [--no-check
 ## 本机工具链
 
 - JDK 21 ✅  Go 1.26 ✅  gcc ✗（装 MinGW 后 `--c`）  g++ ✗（装 MinGW 后 `--cpp`）
+**M7 进度**：Polyglot 互操作第一步已跑通（GraalVM JDK 21 + Maven 3.9+）：
+
+    cd polyglot
+    mvn compile exec:java
+
+输出：
+
+    ==== UniVM Polyglot Demo ====
+    [JS -> Java] addOne(41) = 42
+    [JS -> UniHeap] load(7) + load(35) = 44
+    [JS -> Java array] squares = 0 1 4 9 16
+    ==== Demo 完成 ====
+
+已完成：JS 调用 Java 函数、模拟 Uni 堆对象、数组跨语言传递。
+待完成：把 Uni 编译产物注册为 Value、字符串迁移到 TruffleString。
