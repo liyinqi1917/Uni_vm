@@ -23,7 +23,7 @@ public class BackendC {
             sb.append("long long f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("long long");
+                sb.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY ? "long long *" : "long long");
             }
             sb.append(");\n");
         }
@@ -34,11 +34,12 @@ public class BackendC {
             sb.append("long long f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("long long p_").append(fn.params.get(k));
+                sb.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY ? "long long *p_" : "long long p_")
+                  .append(fn.params.get(k));
             }
             sb.append(") {\n");
             Emitter e = new Emitter(sb);
-            e.declareLocals(fn.body, fn.params, "    ");
+            e.declareLocals(fn.body, fn.params, fn.paramTypes, "    ");
             e.block(fn.body, "    ");
             if (!alwaysReturns(fn.body)) sb.append("    return 0;\n}\n\n");
             else sb.append("}\n\n");
@@ -46,7 +47,7 @@ public class BackendC {
 
         sb.append("int main(void) {\n");
         Emitter mainE = new Emitter(sb);
-        mainE.declareLocals(m.main, new ArrayList<>(), "    ");
+        mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "    ");
         mainE.block(m.main, "    ");
         sb.append("    return 0;\n}\n");
         return sb.toString();
@@ -132,9 +133,10 @@ public class BackendC {
             return t;
         }
 
-        void declareLocals(List<BytecodeNode> body, List<String> params, String ind) {
+        void declareLocals(List<BytecodeNode> body, List<String> params,
+                           List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
-            arrLocals = ArrayTypes.inferArrays(body, params);
+            arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
@@ -169,7 +171,7 @@ public class BackendC {
                         break;
                     }
                     case LOAD: {
-                        boolean arr = arrLocals.contains(i.str) && !paramSet.contains(i.str);
+                        boolean arr = arrLocals.contains(i.str); // 数组参数也走数组路径
                         int t = newTemp(arr);
                         sb.append(ind).append(arr ? "long long *t" : "long long t").append(t)
                           .append(" = ").append(ref(i.str)).append(";\n");

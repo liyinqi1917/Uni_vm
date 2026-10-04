@@ -1,0 +1,6 @@
+# 反例：把 int 传给 array 参数，必须被类型检查拦截
+func sum(arr: array) {
+    return arr[0];
+}
+let x = 5;
+print sum(x);

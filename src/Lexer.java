@@ -89,6 +89,7 @@ public class Lexer {
             case '[': pos++; return new Token(Token.Type.LBRACKET, "[");
             case ']': pos++; return new Token(Token.Type.RBRACKET, "]");
             case ',': pos++; return new Token(Token.Type.COMMA, ",");
+            case ':': pos++; return new Token(Token.Type.COLON, ":");
             case ';': pos++; return new Token(Token.Type.SEMICOLON, ";");
         }
 
