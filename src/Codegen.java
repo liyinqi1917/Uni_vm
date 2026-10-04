@@ -79,10 +79,12 @@ class WhileNode extends BytecodeNode {
 class Function {
     final String name;
     final List<String> params;
+    final List<TypeChecker.T> paramTypes; // 与 params 等长；后端据此选择参数声明类型
     final List<BytecodeNode> body;
-    Function(String name, List<String> params, List<BytecodeNode> body) {
+    Function(String name, List<String> params, List<TypeChecker.T> paramTypes, List<BytecodeNode> body) {
         this.name = name;
         this.params = params;
+        this.paramTypes = paramTypes;
         this.body = body;
     }
 }
@@ -101,7 +103,7 @@ public class Codegen {
         for (Stmt s : prog.stmts) {
             if (s instanceof FuncDecl) {
                 FuncDecl f = (FuncDecl) s;
-                m.funcs.put(f.name, new Function(f.name, f.params, blockNodes(f.body)));
+                m.funcs.put(f.name, new Function(f.name, f.params, f.paramTypes, blockNodes(f.body)));
             } else {
                 genStmt(s, m.main);
             }

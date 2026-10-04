@@ -12,9 +12,12 @@ import java.util.Set;
 // 因存在 `let b = a` 这类句柄拷贝，迭代到不动点。
 public class ArrayTypes {
 
-    public static Set<String> inferArrays(List<BytecodeNode> body, List<String> params) {
+    public static Set<String> inferArrays(List<BytecodeNode> body, List<String> params,
+                                          List<TypeChecker.T> paramTypes) {
         Map<String, Integer> t = new HashMap<>();
-        for (String p : params) t.put(p, 0);
+        // 数组参数按签名预置为 1：函数体从不 STORE 参数来源，不播种则推断不出
+        for (int k = 0; k < params.size(); k++)
+            t.put(params.get(k), paramTypes.get(k) == TypeChecker.T.ARRAY ? 1 : 0);
 
         boolean changed = true;
         while (changed) {

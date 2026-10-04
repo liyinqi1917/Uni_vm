@@ -55,3 +55,6 @@ arrays_*
 funcs_*
 control_*
 py_demo_*
+arrparam_c.c
+arrparam_cpp.cpp
+arrparam_cpp.h

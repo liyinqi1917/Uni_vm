@@ -22,12 +22,15 @@ public class BackendCpp {
         // ===== 头文件 =====
         StringBuilder h = new StringBuilder();
         h.append("#pragma once\n\n");
-        h.append("#include <cstdint>\n\n");
+        h.append("#include <cstdint>\n");
+        if (needVector || anyArrayParam(m)) h.append("#include <vector>\n"); // 数组参数签名引用 std::vector
+        h.append('\n');
         for (Function fn : m.funcs.values()) {
             h.append("std::int64_t f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) h.append(", ");
-                h.append("std::int64_t p_").append(fn.params.get(k));
+                h.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY
+                        ? "std::vector<std::int64_t>* p_" : "std::int64_t p_").append(fn.params.get(k));
             }
             h.append(");\n");
         }
@@ -43,11 +46,12 @@ public class BackendCpp {
             sb.append("std::int64_t f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("std::int64_t p_").append(fn.params.get(k));
+                sb.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY
+                        ? "std::vector<std::int64_t>* p_" : "std::int64_t p_").append(fn.params.get(k));
             }
             sb.append(") {\n");
             Emitter e = new Emitter(sb);
-            e.declareLocals(fn.body, fn.params, "    ");
+            e.declareLocals(fn.body, fn.params, fn.paramTypes, "    ");
             e.block(fn.body, "    ");
             if (!alwaysReturns(fn.body)) sb.append("    return 0;\n}\n\n");
             else sb.append("}\n\n");
@@ -55,11 +59,18 @@ public class BackendCpp {
 
         sb.append("int main() {\n");
         Emitter mainE = new Emitter(sb);
-        mainE.declareLocals(m.main, new ArrayList<>(), "    ");
+        mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "    ");
         mainE.block(m.main, "    ");
         sb.append("    return 0;\n}\n");
 
         return new Output(h.toString(), sb.toString());
+    }
+
+    // 是否有函数带数组参数（头文件据此决定是否 include <vector>）
+    private static boolean anyArrayParam(Module m) {
+        for (Function fn : m.funcs.values())
+            for (TypeChecker.T t : fn.paramTypes) if (t == TypeChecker.T.ARRAY) return true;
+        return false;
     }
 
     private static boolean anyPrint(Module m) {
@@ -142,9 +153,10 @@ public class BackendCpp {
             return t;
         }
 
-        void declareLocals(List<BytecodeNode> body, List<String> params, String ind) {
+        void declareLocals(List<BytecodeNode> body, List<String> params,
+                           List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
-            arrLocals = ArrayTypes.inferArrays(body, params);
+            arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
@@ -181,7 +193,7 @@ public class BackendCpp {
                         break;
                     }
                     case LOAD: {
-                        boolean arr = arrLocals.contains(i.str) && !paramSet.contains(i.str);
+                        boolean arr = arrLocals.contains(i.str); // 数组参数也走数组路径
                         int t = newTemp(arr);
                         sb.append(ind).append(arr ? "std::vector<std::int64_t>* t" : "std::int64_t t")
                           .append(t).append(" = ").append(ref(i.str)).append(";\n");

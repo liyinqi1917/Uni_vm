@@ -80,13 +80,27 @@ public class Parser {
         Token name = expect(Token.Type.IDENT);
         expect(Token.Type.LPAREN);
         List<String> params = new java.util.ArrayList<>();
+        List<TypeChecker.T> types = new java.util.ArrayList<>();
         if (!check(Token.Type.RPAREN)) {
-            params.add(expect(Token.Type.IDENT).text);
-            while (check(Token.Type.COMMA)) { next(); params.add(expect(Token.Type.IDENT).text); }
+            parseParam(params, types);
+            while (check(Token.Type.COMMA)) { next(); parseParam(params, types); }
         }
         expect(Token.Type.RPAREN);
         Block body = parseBlock();
-        return new FuncDecl(name.text, params, body);
+        return new FuncDecl(name.text, params, types, body);
+    }
+
+    // 参数语法：IDENT [':' IDENT]。未标注默认 INT；类型名映射统一在 TypeChecker.typeFromName
+    private void parseParam(List<String> names, List<TypeChecker.T> types) {
+        names.add(expect(Token.Type.IDENT).text);
+        TypeChecker.T t = TypeChecker.T.INT;
+        if (check(Token.Type.COLON)) {
+            next();
+            Token tn = expect(Token.Type.IDENT);
+            t = TypeChecker.typeFromName(tn.text);
+            if (t == null) throw new RuntimeException("未知类型名: " + tn.text);
+        }
+        types.add(t);
     }
 
     private Stmt parseReturn() {

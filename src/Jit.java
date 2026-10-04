@@ -94,7 +94,7 @@ public class Jit {
     }
 
     CompiledFunction osrCompileMain() {
-        return osrCompile(new Function("$main", new ArrayList<>(), module.main));
+        return osrCompile(new Function("$main", new ArrayList<>(), new ArrayList<>(), module.main));
     }
 
     // Tier 2（机器码 C2）能力探测：需要 GraalVM / JVMCI

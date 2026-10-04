@@ -34,7 +34,7 @@ public class TypeChecker {
             if (s instanceof FuncDecl) {
                 FuncDecl f = (FuncDecl) s;
                 List<T> ps = new ArrayList<>();
-                for (int k = 0; k < f.params.size(); k++) ps.add(T.INT);
+                for (int k = 0; k < f.params.size(); k++) ps.add(f.paramTypes.get(k));
                 funParams.put(f.name, ps);
                 funRet.put(f.name, T.INT);
             }
@@ -56,6 +56,13 @@ public class TypeChecker {
         if (t != T.INT) errors.add(what + " 需要整数类型，实际 " + t);
     }
 
+    // 类型名 -> T：前端类型标注与后端共享的唯一映射表（未知名返回 null）
+    public static T typeFromName(String s) {
+        if (s.equals("array")) return T.ARRAY;
+        if (s.equals("int")) return T.INT;
+        return null;
+    }
+
     private void stmt(Stmt s) {
         if (s instanceof Let) {
             Let l = (Let) s;
@@ -64,7 +71,9 @@ public class TypeChecker {
         } else if (s instanceof Assign) {
             Assign a = (Assign) s;
             T t = expr(a.value);
-            if (lookup(a.name) == null) declare(a.name, t); // Python 风格：首次赋值即声明
+            T old = lookup(a.name);
+            if (old == null) declare(a.name, t); // Python 风格：首次赋值即声明
+            else if (old != t) errors.add("变量 " + a.name + " 赋值类型不匹配：期望 " + old + "，实际 " + t);
         } else if (s instanceof Print) {
             expr(((Print) s).value);
         } else if (s instanceof ExprStmt) {
@@ -85,7 +94,7 @@ public class TypeChecker {
         } else if (s instanceof FuncDecl) {
             FuncDecl f = (FuncDecl) s;
             enter();
-            for (String pn : f.params) declare(pn, T.INT);
+            for (int i = 0; i < f.params.size(); i++) declare(f.params.get(i), f.paramTypes.get(i));
             for (Stmt b : f.body.stmts) stmt(b);
             exit();
         } else if (s instanceof IndexSet) {
@@ -136,7 +145,12 @@ public class TypeChecker {
             if (ps.size() != c.args.size()) {
                 errors.add("函数 " + c.name + " 参数个数不匹配：期望 " + ps.size() + "，实际 " + c.args.size());
             }
-            for (Expr a : c.args) requireInt(expr(a), "实参");
+            for (int i = 0; i < c.args.size() && i < ps.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (at != ps.get(i))
+                    errors.add("函数 " + c.name + " 第 " + (i + 1) + " 个实参类型不匹配：期望 "
+                            + ps.get(i) + "，实际 " + at);
+            }
             return funRet.get(c.name);
         }
         if (e instanceof ArrayNew) {

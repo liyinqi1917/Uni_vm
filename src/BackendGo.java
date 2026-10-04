@@ -18,11 +18,12 @@ public class BackendGo {
             sb.append("func f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("p_").append(fn.params.get(k)).append(" int64");
+                sb.append("p_").append(fn.params.get(k))
+                  .append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY ? " []int64" : " int64");
             }
             sb.append(") int64 {\n");
             Emitter e = new Emitter(sb);
-            e.declareLocals(fn.body, fn.params, "\t");
+            e.declareLocals(fn.body, fn.params, fn.paramTypes, "\t");
             e.block(fn.body, "\t");
             if (!alwaysReturns(fn.body)) sb.append("\treturn 0\n}\n\n");
             else sb.append("}\n\n");
@@ -30,7 +31,7 @@ public class BackendGo {
 
         sb.append("func main() {\n");
         Emitter mainE = new Emitter(sb);
-        mainE.declareLocals(m.main, new ArrayList<>(), "\t");
+        mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "\t");
         mainE.block(m.main, "\t");
         sb.append("}\n");
         return sb.toString();
@@ -103,9 +104,10 @@ public class BackendGo {
 
         String ref(String name) { return (paramSet.contains(name) ? "p_" : "v_") + name; }
 
-        void declareLocals(List<BytecodeNode> body, List<String> params, String ind) {
+        void declareLocals(List<BytecodeNode> body, List<String> params,
+                           List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
-            Set<String> arrLocals = ArrayTypes.inferArrays(body, params);
+            Set<String> arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);

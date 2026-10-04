@@ -98,10 +98,12 @@ class While extends Stmt {
 class FuncDecl extends Stmt {
     final String name;
     final List<String> params;
+    final List<TypeChecker.T> paramTypes; // 与 params 等长；未标注参数默认 INT（M7：数组作实参）
     final Block body;
-    FuncDecl(String name, List<String> params, Block body) {
+    FuncDecl(String name, List<String> params, List<TypeChecker.T> paramTypes, Block body) {
         this.name = name;
         this.params = params;
+        this.paramTypes = paramTypes;
         this.body = body;
     }
 }
