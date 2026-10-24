@@ -1,7 +1,7 @@
 // Token 词元：类型 + 文本
 public class Token {
     public enum Type {
-        NUMBER, IDENT,
+        NUMBER, STRING, IDENT,
         PLUS, MINUS, MUL, DIV,
         LPAREN, RPAREN, LBRACE, RBRACE, COMMA,
         LBRACKET, RBRACKET,

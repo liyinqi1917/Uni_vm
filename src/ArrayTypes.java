@@ -12,9 +12,12 @@ import java.util.Set;
 // 因存在 `let b = a` 这类句柄拷贝，迭代到不动点。
 public class ArrayTypes {
 
-    public static Set<String> inferArrays(List<BytecodeNode> body, List<String> params) {
+    public static Set<String> inferArrays(List<BytecodeNode> body, List<String> params,
+                                          List<TypeChecker.T> paramTypes) {
         Map<String, Integer> t = new HashMap<>();
-        for (String p : params) t.put(p, 0);
+        // 数组参数按签名预置为 1：函数体从不 STORE 参数来源，不播种则推断不出
+        for (int k = 0; k < params.size(); k++)
+            t.put(params.get(k), paramTypes.get(k) == TypeChecker.T.ARRAY ? 1 : 0);
 
         boolean changed = true;
         while (changed) {
@@ -35,6 +38,7 @@ public class ArrayTypes {
                 Instruction i = (Instruction) n;
                 switch (i.op) {
                     case PUSH: st.push(0); break;
+                    case SCONST: st.push(0); break;
                     case LOAD: st.push(t.getOrDefault(i.str, 0)); break;
                     case STORE: {
                         int v = pop(st);
@@ -48,14 +52,20 @@ public class ArrayTypes {
                     case INEG: pop(st); st.push(0); break;
                     case IEQ: case INE: case ILT: case IGT: case ILE: case IGE:
                         pop(st); pop(st); st.push(0); break;
-                    case PRINT_INT: case POP: case RET: pop(st); break;
+                    case PRINT_INT: case PRINT_STR: case POP: case RET: pop(st); break;
                     case ANEW: st.push(1); break;
                     case AGET: pop(st); pop(st); st.push(0); break;
                     case ASET: pop(st); pop(st); pop(st); break;
                     case ALEN: pop(st); st.push(0); break;
+                    case SLEN: pop(st); st.push(0); break;
                     case CALL: {
                         for (int k = 0; k < i.operand; k++) pop(st);
                         st.push(0);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        for (int k = 0; k < i.operand; k++) pop(st);
+                        st.push(0); // 标准库返回 INT 或 STRING，均不是数组
                         break;
                     }
                 }

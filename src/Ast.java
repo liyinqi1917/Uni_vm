@@ -4,12 +4,21 @@ import java.util.List;
 // ===== AST 节点 =====
 
 // 表达式基类
-abstract class Expr {}
+// type：TypeChecker 推断结果（INT / ARRAY / STRING），供 Codegen 选择指令
+abstract class Expr {
+    TypeChecker.T type;
+}
 
 // 整数常量
 class Num extends Expr {
     final long value;
     Num(long value) { this.value = value; }
+}
+
+// 字符串常量
+class StrLit extends Expr {
+    final String value;
+    StrLit(String value) { this.value = value; }
 }
 
 // 变量引用
@@ -98,10 +107,12 @@ class While extends Stmt {
 class FuncDecl extends Stmt {
     final String name;
     final List<String> params;
+    final List<TypeChecker.T> paramTypes; // 与 params 等长；未标注参数默认 INT（M7：数组作实参）
     final Block body;
-    FuncDecl(String name, List<String> params, Block body) {
+    FuncDecl(String name, List<String> params, List<TypeChecker.T> paramTypes, Block body) {
         this.name = name;
         this.params = params;
+        this.paramTypes = paramTypes;
         this.body = body;
     }
 }

@@ -10,6 +10,29 @@ import java.util.Set;
 // 代码不做追踪 GC（与 C 同），可用智能指针/RAII 改造，此处保持与 C 一致的裸指针模型。
 public class BackendCpp {
 
+    private static final String READ_HELPER = """
+            static std::string uni_read_file(const std::string &path) {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) return "";
+                std::ostringstream ss;
+                ss << in.rdbuf();
+                return ss.str();
+            }
+
+            """;
+
+    private static final String WRITE_HELPER = """
+            static std::int64_t uni_write_file(const std::string &path,
+                                               const std::string &content) {
+                std::ofstream out(path, std::ios::binary);
+                if (!out) return -1;
+                out << content;
+                out.flush();
+                return out.good() ? 0 : -1;
+            }
+
+            """;
+
     public static class Output {
         public final String header, source;
         Output(String header, String source) { this.header = header; this.source = source; }
@@ -18,16 +41,23 @@ public class BackendCpp {
     public static Output emit(Module m, String headerName) {
         boolean needStdio = anyPrint(m);
         boolean needVector = anyNode(m, Opcode.ANEW);
+        boolean needRead = m.hasSysCall("readFile");
+        boolean needWrite = m.hasSysCall("writeFile");
+        boolean needTime = m.hasSysCall("time");
+        boolean needString = anyNode(m, Opcode.SCONST) || needRead || needWrite;
 
         // ===== 头文件 =====
         StringBuilder h = new StringBuilder();
         h.append("#pragma once\n\n");
-        h.append("#include <cstdint>\n\n");
+        h.append("#include <cstdint>\n");
+        if (needVector || anyArrayParam(m)) h.append("#include <vector>\n"); // 数组参数签名引用 std::vector
+        h.append('\n');
         for (Function fn : m.funcs.values()) {
             h.append("std::int64_t f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) h.append(", ");
-                h.append("std::int64_t p_").append(fn.params.get(k));
+                h.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY
+                        ? "std::vector<std::int64_t>* p_" : "std::int64_t p_").append(fn.params.get(k));
             }
             h.append(");\n");
         }
@@ -37,34 +67,48 @@ public class BackendCpp {
         sb.append("#include \"").append(headerName).append(".h\"\n");
         if (needStdio) sb.append("#include <cstdio>\n");
         if (needVector) sb.append("#include <vector>\n");
+        if (needString) sb.append("#include <string>\n");
+        if (needRead || needWrite) sb.append("#include <fstream>\n");
+        if (needRead) sb.append("#include <sstream>\n");
+        if (needTime) sb.append("#include <ctime>\n");
         sb.append('\n');
+
+        if (needRead) sb.append(READ_HELPER);
+        if (needWrite) sb.append(WRITE_HELPER);
 
         for (Function fn : m.funcs.values()) {
             sb.append("std::int64_t f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("std::int64_t p_").append(fn.params.get(k));
+                sb.append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY
+                        ? "std::vector<std::int64_t>* p_" : "std::int64_t p_").append(fn.params.get(k));
             }
             sb.append(") {\n");
-            Emitter e = new Emitter(sb);
-            e.declareLocals(fn.body, fn.params, "    ");
+            Emitter e = new Emitter(sb, m);
+            e.declareLocals(fn.body, fn.params, fn.paramTypes, "    ");
             e.block(fn.body, "    ");
             if (!alwaysReturns(fn.body)) sb.append("    return 0;\n}\n\n");
             else sb.append("}\n\n");
         }
 
         sb.append("int main() {\n");
-        Emitter mainE = new Emitter(sb);
-        mainE.declareLocals(m.main, new ArrayList<>(), "    ");
+        Emitter mainE = new Emitter(sb, m);
+        mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "    ");
         mainE.block(m.main, "    ");
         sb.append("    return 0;\n}\n");
 
         return new Output(h.toString(), sb.toString());
     }
 
+    // 是否有函数带数组参数（头文件据此决定是否 include <vector>）
+    private static boolean anyArrayParam(Module m) {
+        for (Function fn : m.funcs.values())
+            for (TypeChecker.T t : fn.paramTypes) if (t == TypeChecker.T.ARRAY) return true;
+        return false;
+    }
+
     private static boolean anyPrint(Module m) {
-        for (Function fn : m.funcs.values()) if (hasNode(fn.body, Opcode.PRINT_INT)) return true;
-        return hasNode(m.main, Opcode.PRINT_INT);
+        return anyNode(m, Opcode.PRINT_INT) || anyNode(m, Opcode.PRINT_STR);
     }
 
     private static boolean anyNode(Module m, Opcode op) {
@@ -113,6 +157,24 @@ public class BackendCpp {
         }
     }
 
+    private static String cppLiteral(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    if (c < 0x20) b.append(String.format("\\x%02x", (int) c));
+                    else b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
+
     private static String symbol(Opcode op) {
         switch (op) {
             case IADD: return "+"; case ISUB: return "-";
@@ -126,13 +188,18 @@ public class BackendCpp {
 
     private static class Emitter {
         final StringBuilder sb;
+        final Module module;
         int tempCounter = 0;
         final Deque<Integer> stack = new ArrayDeque<>();
         final Set<String> paramSet = new java.util.HashSet<>();
         final Set<Integer> tempIsArr = new java.util.HashSet<>();
         Set<String> arrLocals = new java.util.HashSet<>();
+        Set<String> strLocals = new java.util.HashSet<>();
 
-        Emitter(StringBuilder sb) { this.sb = sb; }
+        Emitter(StringBuilder sb, Module module) {
+            this.sb = sb;
+            this.module = module;
+        }
 
         String ref(String name) { return (paramSet.contains(name) ? "p_" : "v_") + name; }
 
@@ -142,15 +209,19 @@ public class BackendCpp {
             return t;
         }
 
-        void declareLocals(List<BytecodeNode> body, List<String> params, String ind) {
+        void declareLocals(List<BytecodeNode> body, List<String> params,
+                           List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
-            arrLocals = ArrayTypes.inferArrays(body, params);
+            arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
+            strLocals = StringTypes.inferStrings(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
             for (String v : names) {
                 if (arrLocals.contains(v))
                     sb.append(ind).append("std::vector<std::int64_t>* v_").append(v).append(" = nullptr;\n");
+                else if (strLocals.contains(v))
+                    sb.append(ind).append("std::string v_").append(v).append(";\n");
                 else
                     sb.append(ind).append("std::int64_t v_").append(v).append(" = 0;\n");
             }
@@ -180,10 +251,19 @@ public class BackendCpp {
                         stack.push(t);
                         break;
                     }
+                    case SCONST: {
+                        int t = newTemp(false);
+                        sb.append(ind).append("std::string t").append(t).append(" = ")
+                          .append(cppLiteral(module.stringPool.get((int) i.operand))).append(";\n");
+                        stack.push(t);
+                        break;
+                    }
                     case LOAD: {
-                        boolean arr = arrLocals.contains(i.str) && !paramSet.contains(i.str);
+                        boolean arr = arrLocals.contains(i.str); // 数组参数也走数组路径
+                        boolean str = strLocals.contains(i.str);
                         int t = newTemp(arr);
-                        sb.append(ind).append(arr ? "std::vector<std::int64_t>* t" : "std::int64_t t")
+                        sb.append(ind).append(arr ? "std::vector<std::int64_t>* t"
+                                : (str ? "std::string t" : "std::int64_t t"))
                           .append(t).append(" = ").append(ref(i.str)).append(";\n");
                         stack.push(t);
                         break;
@@ -218,6 +298,19 @@ public class BackendCpp {
                         int a = stack.pop();
                         sb.append(ind).append("std::printf(\"%lld\\n\", static_cast<long long>(t")
                           .append(a).append("));\n");
+                        break;
+                    }
+                    case PRINT_STR: {
+                        int a = stack.pop();
+                        sb.append(ind).append("std::printf(\"%s\\n\", t").append(a).append(".c_str());\n");
+                        break;
+                    }
+                    case SLEN: {
+                        int a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("std::int64_t t").append(t)
+                          .append(" = static_cast<std::int64_t>(t").append(a).append(".size());\n");
+                        stack.push(t);
                         break;
                     }
                     case POP: { stack.pop(); break; }
@@ -258,6 +351,34 @@ public class BackendCpp {
                         sb.append(ind).append("std::int64_t t").append(t)
                           .append(" = f_").append(i.str).append("(").append(args).append(");\n");
                         stack.push(t);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = static_cast<std::int64_t>(std::time(nullptr));\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::string t").append(t)
+                              .append(" = uni_read_file(t").append(path).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = uni_write_file(t").append(path).append(", t")
+                              .append(content).append(");\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
                         break;
                     }
                     case RET: {

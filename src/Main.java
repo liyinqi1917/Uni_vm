@@ -1,4 +1,5 @@
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
@@ -10,38 +11,64 @@ import java.util.List;
 //                                         |-> BackendCpp -> g++   -> exe（.h + .cpp）
 //                                         |-> BackendGo  -> go    -> exe
 //                                         |-> BackendJava-> javac -> jar
+//                                         |-> BackendPy  -> python 源码
+//                                         |-> BackendWasm-> .wat + HTML 浏览器测试页
 //
 // 用法:
-//   java Main <input.uni> [--run] [--ir] [--profile] [--no-jit]
-//                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar]
+//   java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>
+//                         [--run] [--ir] [--profile] [--no-jit]
+//                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]
+//                         [--wasm out]
 public class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
-            System.out.println("用法: java Main <input.uni> [--run] [--ir] [--profile] [--no-jit]");
-            System.out.println("                          [--c out] [--cpp base] [--go out.exe] [--jar out.jar]");
+            System.out.println("用法: java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>");
+            System.out.println("                         [--run] [--ir] [--profile] [--no-jit]");
+            System.out.println("                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
+            System.out.println("                         [--wasm out]");
             return;
         }
 
         String source = new String(Files.readAllBytes(Paths.get(args[0])));
 
         // 前端：按扩展名选择语言（M5：多前端 → 同一 Module）
-        boolean isPython = args[0].toLowerCase().endsWith(".py");
+        // .c 复用 C 风格 Lexer/Parser（与 .uni 同一套大括号语法）
+        String lowerName = args[0].toLowerCase();
+        boolean isPython = lowerName.endsWith(".py");
+        boolean isC      = lowerName.endsWith(".c");
+        boolean isLua    = lowerName.endsWith(".lua");
+        boolean isRust   = lowerName.endsWith(".rs");
+        boolean isLisp   = lowerName.endsWith(".lisp");
         Program prog;
         if (isPython) {
             List<Token> pyTokens = new LexerPy(source).scanAllTokens();
             prog = new ParserPy(pyTokens).parseProgram();
+        } else if (isC) {
+            List<Token> cTokens = new Lexer(source).scanAllTokens();
+            prog = new Parser(cTokens).parseProgram();
+        } else if (isLua) {
+            List<Token> luaTokens = new LexerLua(source).scanAllTokens();
+            prog = new ParserLua(luaTokens).parseProgram();
+        } else if (isRust) {
+            List<Token> rsTokens = new LexerRs(source).scanAllTokens();
+            prog = new ParserRs(rsTokens).parseProgram();
+        } else if (isLisp) {
+            List<Token> lispTokens = new LexerLisp(source).scanAllTokens();
+            prog = new ParserLisp(lispTokens).parseProgram();
         } else {
             List<Token> tokens = new Lexer(source).scanAllTokens();
             prog = new Parser(tokens).parseProgram();
         }
-        Module module = Codegen.emit(prog);
-
-        // M6：静态类型检查（--no-check 关闭）
+        // 类型检查/推断必须先于 Codegen：Codegen 依赖表达式的 STRING 标注
+        // 来选择 PRINT_STR / SLEN 指令（--no-check 时仍做无报错推断）
         boolean noCheck = false;
         for (String a : args) if (a.equals("--no-check")) noCheck = true;
-        if (!noCheck) TypeChecker.check(prog);
+        if (noCheck) TypeChecker.infer(prog);
+        else TypeChecker.check(prog);
+
+        Module module = Codegen.emit(prog);
 
         boolean jitEnabled = true;
         boolean wantProfile = false;
@@ -68,6 +95,7 @@ public class Main {
 
                 case "--profile":
                 case "--no-jit":
+                case "--no-check":
                     break; // 仅作开关，不单独动作
 
                 case "--c": {
@@ -116,6 +144,31 @@ public class Main {
                     exec("javac", "Gen.java");
                     exec("jar", "cfe", out, "Gen", "Gen.class");
                     System.out.println("已打包为 jar: " + out + "  (运行: java -jar " + out + ")");
+                    didSomething = true;
+                    break;
+                }
+
+                case "--py": {
+                    String out = args[++i];
+                    String pyPath = out.toLowerCase().endsWith(".py") ? out : out + ".py";
+                    Files.write(Paths.get(pyPath),
+                            BackendPy.emit(module).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    System.out.println("已生成 Python 源码: " + pyPath);
+                    didSomething = true;
+                    break;
+                }
+
+                case "--wasm": {
+                    String out = args[++i];
+                    String watPath = out.toLowerCase().endsWith(".wat") ? out : out + ".wat";
+                    String htmlPath = watPath.substring(0, watPath.length() - 4) + ".html";
+                    String wat = BackendWasm.emit(module);
+                    Files.write(Paths.get(watPath), wat.getBytes(StandardCharsets.UTF_8));
+                    String title = Paths.get(watPath).getFileName().toString();
+                    Files.write(Paths.get(htmlPath),
+                            BackendWasm.browserTestPage(wat, title).getBytes(StandardCharsets.UTF_8));
+                    System.out.println("已生成 WebAssembly Text: " + watPath);
+                    System.out.println("已生成浏览器测试页: " + htmlPath);
                     didSomething = true;
                     break;
                 }

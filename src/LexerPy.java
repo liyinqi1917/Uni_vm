@@ -13,7 +13,10 @@ public class LexerPy {
     private int pos = 0;
     private final List<Token> out = new ArrayList<>();
 
-    public LexerPy(String src) { this.src = src; }
+    public LexerPy(String src) {
+        // 兼容 Windows 编辑器写入的 UTF-8 BOM
+        this.src = src.startsWith("\uFEFF") ? src.substring(1) : src;
+    }
 
     public List<Token> scanAllTokens() {
         Deque<Integer> indentStack = new ArrayDeque<>();
@@ -21,9 +24,8 @@ public class LexerPy {
 
         String[] lines = src.split("\n", -1);
         for (String rawLine : lines) {
-            // 去掉 # 行注释
-            int hash = rawLine.indexOf('#');
-            String line = hash >= 0 ? rawLine.substring(0, hash) : rawLine;
+            // 去掉 # 行注释（字符串内的 # 保留）
+            String line = stripComment(rawLine);
 
             // 计算缩进（空格计 1，Tab 计 4）
             int indent = 0;
@@ -66,11 +68,33 @@ public class LexerPy {
         return out;
     }
 
+    // 去掉行注释；字符串字面量内的 # 不视为注释起点
+    private static String stripComment(String line) {
+        boolean inString = false;
+        for (int i = 0; i < line.length(); i++) {
+            char c = line.charAt(i);
+            if (c == '"') inString = !inString;
+            else if (c == '#' && !inString) return line.substring(0, i);
+        }
+        return line;
+    }
+
     private void tokenize(String s) {
         int p = 0;
         while (p < s.length()) {
             char c = s.charAt(p);
             if (Character.isWhitespace(c)) { p++; continue; }
+
+            if (c == '"') {
+                int start = p + 1;
+                p++;
+                while (p < s.length() && s.charAt(p) != '"') p++;
+                if (p >= s.length())
+                    throw new RuntimeException("字符串字面量缺少结束引号 (位置 " + start + ")");
+                out.add(new Token(Token.Type.STRING, s.substring(start, p)));
+                p++; // 跳过结束引号
+                continue;
+            }
 
             if (Character.isDigit(c)) {
                 int start = p;

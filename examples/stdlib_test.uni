@@ -1,0 +1,6 @@
+let t = time();
+print t;
+
+writeFile("test_output.txt", "Hello from UniVM Standard Library!");
+let content = readFile("test_output.txt");
+print content;

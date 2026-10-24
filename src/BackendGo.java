@@ -10,27 +10,36 @@ public class BackendGo {
 
     public static String emit(Module m) {
         boolean needFmt = anyPrint(m);
+        boolean needOS = m.hasSysCall("readFile") || m.hasSysCall("writeFile");
+        boolean needTime = m.hasSysCall("time");
         StringBuilder sb = new StringBuilder();
         sb.append("package main\n\n");
-        if (needFmt) sb.append("import \"fmt\"\n\n");
+        if (needFmt || needOS || needTime) {
+            sb.append("import (\n");
+            if (needFmt)  sb.append("\t\"fmt\"\n");
+            if (needOS)   sb.append("\t\"os\"\n");
+            if (needTime) sb.append("\t\"time\"\n");
+            sb.append(")\n\n");
+        }
 
         for (Function fn : m.funcs.values()) {
             sb.append("func f_").append(fn.name).append("(");
             for (int k = 0; k < fn.params.size(); k++) {
                 if (k > 0) sb.append(", ");
-                sb.append("p_").append(fn.params.get(k)).append(" int64");
+                sb.append("p_").append(fn.params.get(k))
+                  .append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY ? " []int64" : " int64");
             }
             sb.append(") int64 {\n");
-            Emitter e = new Emitter(sb);
-            e.declareLocals(fn.body, fn.params, "\t");
+            Emitter e = new Emitter(sb, m);
+            e.declareLocals(fn.body, fn.params, fn.paramTypes, "\t");
             e.block(fn.body, "\t");
             if (!alwaysReturns(fn.body)) sb.append("\treturn 0\n}\n\n");
             else sb.append("}\n\n");
         }
 
         sb.append("func main() {\n");
-        Emitter mainE = new Emitter(sb);
-        mainE.declareLocals(m.main, new ArrayList<>(), "\t");
+        Emitter mainE = new Emitter(sb, m);
+        mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "\t");
         mainE.block(m.main, "\t");
         sb.append("}\n");
         return sb.toString();
@@ -43,7 +52,10 @@ public class BackendGo {
 
     private static boolean hasPrint(List<BytecodeNode> ns) {
         for (BytecodeNode n : ns) {
-            if (n instanceof Instruction && ((Instruction) n).op == Opcode.PRINT_INT) return true;
+            if (n instanceof Instruction) {
+                Opcode op = ((Instruction) n).op;
+                if (op == Opcode.PRINT_INT || op == Opcode.PRINT_STR) return true;
+            }
             if (n instanceof IfNode) {
                 IfNode f = (IfNode) n;
                 if (hasPrint(f.cond) || hasPrint(f.then) || hasPrint(f.els)) return true;
@@ -82,6 +94,24 @@ public class BackendGo {
         }
     }
 
+    private static String goLiteral(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    if (c < 0x20) b.append(String.format("\\x%02x", (int) c));
+                    else b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
+
     private static String symbol(Opcode op) {
         switch (op) {
             case IADD: return "+"; case ISUB: return "-";
@@ -95,22 +125,29 @@ public class BackendGo {
 
     private static class Emitter {
         final StringBuilder sb;
+        final Module module;
         int tempCounter = 0;
         final Deque<Integer> stack = new ArrayDeque<>();
         final java.util.Set<String> paramSet = new java.util.HashSet<>();
 
-        Emitter(StringBuilder sb) { this.sb = sb; }
+        Emitter(StringBuilder sb, Module module) {
+            this.sb = sb;
+            this.module = module;
+        }
 
         String ref(String name) { return (paramSet.contains(name) ? "p_" : "v_") + name; }
 
-        void declareLocals(List<BytecodeNode> body, List<String> params, String ind) {
+        void declareLocals(List<BytecodeNode> body, List<String> params,
+                           List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
-            Set<String> arrLocals = ArrayTypes.inferArrays(body, params);
+            Set<String> arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
+            Set<String> strLocals = StringTypes.inferStrings(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
             for (String v : names) {
                 if (arrLocals.contains(v)) sb.append(ind).append("var v_").append(v).append(" []int64\n");
+                else if (strLocals.contains(v)) sb.append(ind).append("var v_").append(v).append(" string\n");
                 else sb.append(ind).append("var v_").append(v).append(" int64 = 0\n");
             }
         }
@@ -138,6 +175,13 @@ public class BackendGo {
                         int t = tempCounter++;
                         sb.append(ind).append("t").append(t)
                           .append(" := int64(").append(i.operand).append(")\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case SCONST: {
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t).append(" := ")
+                          .append(goLiteral(module.stringPool.get((int) i.operand))).append("\n");
                         stack.push(t);
                         break;
                     }
@@ -185,7 +229,24 @@ public class BackendGo {
                         sb.append(ind).append("fmt.Println(t").append(a).append(")\n");
                         break;
                     }
-                    case POP: { stack.pop(); break; }
+                    case PRINT_STR: {
+                        int a = stack.pop();
+                        sb.append(ind).append("fmt.Println(t").append(a).append(")\n");
+                        break;
+                    }
+                    case SLEN: {
+                        int a = stack.pop();
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t)
+                          .append(" := int64(len(t").append(a).append("))\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case POP: {
+                        int a = stack.pop();
+                        sb.append(ind).append("_ = t").append(a).append("\n");
+                        break;
+                    }
                     case ANEW: {
                         int s = stack.pop();
                         int t = tempCounter++;
@@ -223,6 +284,45 @@ public class BackendGo {
                         sb.append(ind).append("t").append(t)
                           .append(" := f_").append(i.str).append("(").append(args).append(")\n");
                         stack.push(t);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(t)
+                              .append(" := time.Now().UnixMilli()\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int data = tempCounter++;
+                            int err = tempCounter++;
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(data).append(", t").append(err)
+                              .append(" := os.ReadFile(t").append(path).append(")\n");
+                            sb.append(ind).append("t").append(t).append(" := \"\"\n");
+                            sb.append(ind).append("if t").append(err).append(" == nil {\n");
+                            sb.append(ind).append("\tt").append(t).append(" = string(t").append(data).append(")\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int err = tempCounter++;
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(err)
+                              .append(" := os.WriteFile(t").append(path).append(", []byte(t")
+                              .append(content).append("), 0644)\n");
+                            sb.append(ind).append("t").append(t).append(" := int64(0)\n");
+                            sb.append(ind).append("if t").append(err).append(" != nil {\n");
+                            sb.append(ind).append("\tt").append(t).append(" = -1\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
                         break;
                     }
                     case RET: {

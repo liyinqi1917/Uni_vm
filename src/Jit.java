@@ -94,7 +94,7 @@ public class Jit {
     }
 
     CompiledFunction osrCompileMain() {
-        return osrCompile(new Function("$main", new ArrayList<>(), module.main));
+        return osrCompile(new Function("$main", new ArrayList<>(), new ArrayList<>(), module.main));
     }
 
     // Tier 2（机器码 C2）能力探测：需要 GraalVM / JVMCI
@@ -223,6 +223,16 @@ public class Jit {
                 case ALEN: emit(JitOp.ALEN, 0, null, 0); break;
                 case CALL: emit(JitOp.CALL, (int) i.operand, i.str, 0); break;
                 case RET:  emit(JitOp.RET, 0, null, 0); break;
+                // 标准库依赖 String/文件/时间副作用，Vm 会禁用此类模块的 JIT；
+                // 若走到这里说明状态不一致，明确报错而不是静默生成错误代码。
+                case SYS_CALL:
+                    throw new UnsupportedOperationException("JIT 不支持标准库调用: " + i.str);
+                // JIT 槽位是 long[]，模块含字符串时 Vm 会禁用 JIT；
+                // 若走到这里说明状态不一致，明确报错而不是静默生成错误代码。
+                case SCONST:
+                case PRINT_STR:
+                case SLEN:
+                    throw new UnsupportedOperationException("JIT 不支持字符串操作: " + i.op);
             }
         }
     }

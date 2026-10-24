@@ -1,0 +1,6 @@
+# 反例2：个数不匹配，验证 min 守卫不越界
+func sum(arr: array) {
+    return arr[0];
+}
+let a = [1];
+print sum(a, 7);
