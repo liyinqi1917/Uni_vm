@@ -142,6 +142,9 @@ public class TypeChecker {
         }
         if (e instanceof Call) {
             Call c = (Call) e;
+            if (c.name.equals("time") || c.name.equals("readFile") || c.name.equals("writeFile")) {
+                return typed(e, builtinCall(c));
+            }
             if (c.name.equals("len") && c.args.size() == 1) { // 内建 len：数组或字符串
                 T at = expr(c.args.get(0));
                 if (at != T.ARRAY && at != T.STRING)
@@ -180,5 +183,36 @@ public class TypeChecker {
         }
         errors.add("未知表达式节点: " + e);
         return typed(e, T.INT);
+    }
+
+    // 标准库内置函数签名检查（time / readFile / writeFile）
+    private T builtinCall(Call c) {
+        if (c.name.equals("time")) {
+            if (c.args.size() != 0)
+                errors.add("time 需要 0 个参数，实际 " + c.args.size());
+            for (Expr a : c.args) expr(a);
+            return T.INT;
+        }
+
+        if (c.name.equals("readFile")) {
+            if (c.args.size() != 1)
+                errors.add("readFile 需要 1 个参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i == 0 && at != T.STRING)
+                    errors.add("readFile 第 1 个参数需要 STRING，实际 " + at);
+            }
+            return T.STRING;
+        }
+
+        // writeFile(path, content) -> INT
+        if (c.args.size() != 2)
+            errors.add("writeFile 需要 2 个参数，实际 " + c.args.size());
+        for (int i = 0; i < c.args.size(); i++) {
+            T at = expr(c.args.get(i));
+            if (i < 2 && at != T.STRING)
+                errors.add("writeFile 第 " + (i + 1) + " 个参数需要 STRING，实际 " + at);
+        }
+        return T.INT;
     }
 }

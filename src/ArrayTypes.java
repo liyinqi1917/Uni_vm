@@ -63,6 +63,11 @@ public class ArrayTypes {
                         st.push(0);
                         break;
                     }
+                    case SYS_CALL: {
+                        for (int k = 0; k < i.operand; k++) pop(st);
+                        st.push(0); // 标准库返回 INT 或 STRING，均不是数组
+                        break;
+                    }
                 }
             } else if (n instanceof IfNode) {
                 IfNode f = (IfNode) n;

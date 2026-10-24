@@ -41,8 +41,11 @@ public class Vm {
     private Vm(Module module, boolean jitEnabled) {
         this.module = module;
         // JIT 的槽位/操作数栈是原生 long[]，无法承载 String；
-        // 含字符串常量的模块统一走解释器，整数/数组模块保持原 JIT 行为。
-        this.jit = new Jit(module, jitEnabled && module.stringPool.isEmpty());
+        // 含字符串常量或标准库 SYS_CALL 的模块统一走解释器，
+        // 整数/数组模块保持原 JIT 行为。
+        this.jit = new Jit(module, jitEnabled
+                && module.stringPool.isEmpty()
+                && !module.hasAnySysCall());
     }
 
     public static Vm create(Module module, boolean jitEnabled) { return new Vm(module, jitEnabled); }
@@ -157,6 +160,48 @@ public class Vm {
                 f.stack.push(callByName(ins.str, vals));
                 break;
             }
+            case SYS_CALL: sysCall(ins, f); break;
+        }
+    }
+
+    // 标准库内置函数。VM 的字符串本来就是 Java String（不经过 Heap 句柄），
+    // 因此 readFile 直接压入 String，writeFile 直接消费 String。
+    private void sysCall(Instruction ins, Frame f) {
+        int argc = (int) ins.operand;
+        switch (ins.str) {
+            case "time":
+                if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                f.stack.push(System.currentTimeMillis());
+                break;
+
+            case "readFile": {
+                if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                String path = asString(f.stack.pop());
+                try {
+                    String content = java.nio.file.Files.readString(java.nio.file.Path.of(path));
+                    f.stack.push(content);
+                } catch (Exception ex) {
+                    // 统一约定：读取失败返回空字符串
+                    f.stack.push("");
+                }
+                break;
+            }
+
+            case "writeFile": {
+                if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                String content = asString(f.stack.pop());
+                String path = asString(f.stack.pop());
+                try {
+                    java.nio.file.Files.writeString(java.nio.file.Path.of(path), content);
+                    f.stack.push(0L);
+                } catch (Exception ex) {
+                    f.stack.push(-1L);
+                }
+                break;
+            }
+
+            default:
+                throw new RuntimeException("未知标准库函数: " + ins.str);
         }
     }
 

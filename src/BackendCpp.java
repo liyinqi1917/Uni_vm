@@ -10,6 +10,29 @@ import java.util.Set;
 // 代码不做追踪 GC（与 C 同），可用智能指针/RAII 改造，此处保持与 C 一致的裸指针模型。
 public class BackendCpp {
 
+    private static final String READ_HELPER = """
+            static std::string uni_read_file(const std::string &path) {
+                std::ifstream in(path, std::ios::binary);
+                if (!in) return "";
+                std::ostringstream ss;
+                ss << in.rdbuf();
+                return ss.str();
+            }
+
+            """;
+
+    private static final String WRITE_HELPER = """
+            static std::int64_t uni_write_file(const std::string &path,
+                                               const std::string &content) {
+                std::ofstream out(path, std::ios::binary);
+                if (!out) return -1;
+                out << content;
+                out.flush();
+                return out.good() ? 0 : -1;
+            }
+
+            """;
+
     public static class Output {
         public final String header, source;
         Output(String header, String source) { this.header = header; this.source = source; }
@@ -18,7 +41,10 @@ public class BackendCpp {
     public static Output emit(Module m, String headerName) {
         boolean needStdio = anyPrint(m);
         boolean needVector = anyNode(m, Opcode.ANEW);
-        boolean needString = anyNode(m, Opcode.SCONST);
+        boolean needRead = m.hasSysCall("readFile");
+        boolean needWrite = m.hasSysCall("writeFile");
+        boolean needTime = m.hasSysCall("time");
+        boolean needString = anyNode(m, Opcode.SCONST) || needRead || needWrite;
 
         // ===== 头文件 =====
         StringBuilder h = new StringBuilder();
@@ -42,7 +68,13 @@ public class BackendCpp {
         if (needStdio) sb.append("#include <cstdio>\n");
         if (needVector) sb.append("#include <vector>\n");
         if (needString) sb.append("#include <string>\n");
+        if (needRead || needWrite) sb.append("#include <fstream>\n");
+        if (needRead) sb.append("#include <sstream>\n");
+        if (needTime) sb.append("#include <ctime>\n");
         sb.append('\n');
+
+        if (needRead) sb.append(READ_HELPER);
+        if (needWrite) sb.append(WRITE_HELPER);
 
         for (Function fn : m.funcs.values()) {
             sb.append("std::int64_t f_").append(fn.name).append("(");
@@ -319,6 +351,34 @@ public class BackendCpp {
                         sb.append(ind).append("std::int64_t t").append(t)
                           .append(" = f_").append(i.str).append("(").append(args).append(");\n");
                         stack.push(t);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = static_cast<std::int64_t>(std::time(nullptr));\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::string t").append(t)
+                              .append(" = uni_read_file(t").append(path).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = uni_write_file(t").append(path).append(", t")
+                              .append(content).append(");\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
                         break;
                     }
                     case RET: {

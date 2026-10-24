@@ -255,6 +255,45 @@ public class BackendJava {
                         stack.push(t);
                         break;
                     }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = newTemp(false);
+                            sb.append(ind).append("long t").append(t)
+                              .append(" = System.currentTimeMillis();\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("String t").append(t).append(";\n");
+                            sb.append(ind).append("try {\n");
+                            sb.append(ind).append("    t").append(t)
+                              .append(" = java.nio.file.Files.readString(java.nio.file.Path.of(t")
+                              .append(path).append("));\n");
+                            sb.append(ind).append("} catch (Exception e) {\n");
+                            sb.append(ind).append("    t").append(t).append(" = \"\";\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long t").append(t).append(" = -1L;\n");
+                            sb.append(ind).append("try {\n");
+                            sb.append(ind).append("    java.nio.file.Files.writeString(java.nio.file.Path.of(t")
+                              .append(path).append("), t").append(content).append(");\n");
+                            sb.append(ind).append("    t").append(t).append(" = 0L;\n");
+                            sb.append(ind).append("} catch (Exception e) {\n");
+                            sb.append(ind).append("    t").append(t).append(" = -1L;\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
+                        break;
+                    }
                     case RET: {
                         int a = stack.pop();
                         sb.append(ind).append("return t").append(a).append(";\n");

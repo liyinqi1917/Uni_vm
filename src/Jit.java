@@ -223,6 +223,10 @@ public class Jit {
                 case ALEN: emit(JitOp.ALEN, 0, null, 0); break;
                 case CALL: emit(JitOp.CALL, (int) i.operand, i.str, 0); break;
                 case RET:  emit(JitOp.RET, 0, null, 0); break;
+                // 标准库依赖 String/文件/时间副作用，Vm 会禁用此类模块的 JIT；
+                // 若走到这里说明状态不一致，明确报错而不是静默生成错误代码。
+                case SYS_CALL:
+                    throw new UnsupportedOperationException("JIT 不支持标准库调用: " + i.str);
                 // JIT 槽位是 long[]，模块含字符串时 Vm 会禁用 JIT；
                 // 若走到这里说明状态不一致，明确报错而不是静默生成错误代码。
                 case SCONST:

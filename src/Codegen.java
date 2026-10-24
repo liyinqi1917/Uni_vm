@@ -1,7 +1,9 @@
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 // ===== UniVM 字节码（JVM 风格栈式）=====
 // M3：产出 Module = 函数表 + main 指令序列。
@@ -24,6 +26,7 @@ enum Opcode {
     ASET(0),       // 弹出 value、index、array
     ALEN(0),       // 弹出 array，压入长度
     CALL(1),       // str=函数名，operand=实参个数
+    SYS_CALL(1),   // str=内置函数名，operand=实参个数
     RET(0)         // 弹出栈顶返回
     ;
 
@@ -59,7 +62,10 @@ class Instruction extends BytecodeNode {
 
     @Override
     public String toString() {
-        if (str != null) return op + " " + str + (op == Opcode.CALL ? " argc=" + operand : "");
+        if (str != null) {
+            boolean hasArgc = op == Opcode.CALL || op == Opcode.SYS_CALL;
+            return op + " " + str + (hasArgc ? " argc=" + operand : "");
+        }
         return op.operandCount > 0 ? op + " " + operand : op.toString();
     }
 }
@@ -97,6 +103,7 @@ class Module {
     final Map<String, Function> funcs = new LinkedHashMap<>();
     final List<BytecodeNode> main = new ArrayList<>();
     final List<String> stringPool = new ArrayList<>();
+    final Set<String> sysCalls = new LinkedHashSet<>();
 
     // 字符串去重：相同字面量复用同一个池下标
     int internString(String s) {
@@ -105,6 +112,9 @@ class Module {
         stringPool.add(s);
         return stringPool.size() - 1;
     }
+
+    boolean hasSysCall(String name) { return sysCalls.contains(name); }
+    boolean hasAnySysCall() { return !sysCalls.isEmpty(); }
 }
 
 // ===== Codegen：AST -> UniVM 字节码 =====
@@ -125,6 +135,10 @@ public class Codegen {
 
     private static boolean isString(Expr e) {
         return e instanceof StrLit || e.type == TypeChecker.T.STRING;
+    }
+
+    private static boolean isBuiltin(String name) {
+        return name.equals("time") || name.equals("readFile") || name.equals("writeFile");
     }
 
     private static void genStmt(Stmt s, List<BytecodeNode> out, Module m) {
@@ -196,6 +210,13 @@ public class Codegen {
             out.add(new Instruction(Opcode.SCONST, idx));
         } else if (e instanceof Call) {
             Call c = (Call) e;
+            if (isBuiltin(c.name)) {
+                // 标准库内置函数：实参照常从左到右压栈，调用点标记为 SYS_CALL
+                for (Expr arg : c.args) genExpr(arg, out, m);
+                m.sysCalls.add(c.name);
+                out.add(new Instruction(Opcode.SYS_CALL, c.name, c.args.size()));
+                return;
+            }
             if (c.name.equals("len") && c.args.size() == 1) { // 内建 len：数组或字符串
                 Expr arg = c.args.get(0);
                 genExpr(arg, out, m);

@@ -10,15 +10,52 @@ import java.util.Set;
 // 故 ALEN 读 h[-1]。注意：C 没有运行时 GC，生成代码不回收（堆内存随进程释放）。
 public class BackendC {
 
+    private static final String READ_HELPER = """
+            static const char *uni_read_file(const char *path) {
+                FILE *f = fopen(path, "rb");
+                if (!f) return "";
+                if (fseek(f, 0, SEEK_END) != 0) { fclose(f); return ""; }
+                long n = ftell(f);
+                if (n < 0) { fclose(f); return ""; }
+                if (fseek(f, 0, SEEK_SET) != 0) { fclose(f); return ""; }
+                char *buf = (char *)malloc((size_t)n + 1);
+                if (!buf) { fclose(f); return ""; }
+                size_t got = fread(buf, 1, (size_t)n, f);
+                buf[got] = '\\0';
+                fclose(f);
+                return buf;
+            }
+
+            """;
+
+    private static final String WRITE_HELPER = """
+            static long long uni_write_file(const char *path, const char *content) {
+                FILE *f = fopen(path, "wb");
+                if (!f) return -1;
+                size_t len = strlen(content);
+                size_t wrote = fwrite(content, 1, len, f);
+                int closeOk = fclose(f) == 0;
+                return (wrote == len && closeOk) ? 0 : -1;
+            }
+
+            """;
+
     public static String emit(Module m) {
-        boolean needStdio = anyPrint(m);
-        boolean needAlloc = anyNode(m, Opcode.ANEW);
-        boolean needStrlen = anyNode(m, Opcode.SLEN);
+        boolean needRead = m.hasSysCall("readFile");
+        boolean needWrite = m.hasSysCall("writeFile");
+        boolean needTime = m.hasSysCall("time");
+        boolean needStdio = anyPrint(m) || needRead || needWrite;
+        boolean needAlloc = anyNode(m, Opcode.ANEW) || needRead;
+        boolean needStrlen = anyNode(m, Opcode.SLEN) || needWrite;
         StringBuilder sb = new StringBuilder();
         if (needStdio) sb.append("#include <stdio.h>\n");
         if (needAlloc) sb.append("#include <stdlib.h>\n");
         if (needStrlen) sb.append("#include <string.h>\n");
-        if (needStdio || needAlloc || needStrlen) sb.append('\n');
+        if (needTime) sb.append("#include <time.h>\n");
+        if (needStdio || needAlloc || needStrlen || needTime) sb.append('\n');
+
+        if (needRead) sb.append(READ_HELPER);
+        if (needWrite) sb.append(WRITE_HELPER);
 
         // 原型
         for (Function fn : m.funcs.values()) {
@@ -298,6 +335,34 @@ public class BackendC {
                         sb.append(ind).append("long long t").append(t)
                           .append(" = f_").append(i.str).append("(").append(args).append(");\n");
                         stack.push(t);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = newTemp(false);
+                            sb.append(ind).append("long long t").append(t)
+                              .append(" = (long long)time(NULL);\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("const char *t").append(t)
+                              .append(" = uni_read_file(t").append(path).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long long t").append(t)
+                              .append(" = uni_write_file(t").append(path).append(", t")
+                              .append(content).append(");\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
                         break;
                     }
                     case RET: {

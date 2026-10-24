@@ -70,6 +70,12 @@ public class StringTypes {
                         st.push(false);
                         break;
                     }
+                    case SYS_CALL: {
+                        for (int k = 0; k < i.operand; k++) pop(st);
+                        // readFile 返回 STRING，time/writeFile 返回 INT
+                        st.push("readFile".equals(i.str));
+                        break;
+                    }
                 }
             } else if (n instanceof IfNode) {
                 IfNode f = (IfNode) n;

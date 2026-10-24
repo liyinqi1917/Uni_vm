@@ -10,9 +10,17 @@ public class BackendGo {
 
     public static String emit(Module m) {
         boolean needFmt = anyPrint(m);
+        boolean needOS = m.hasSysCall("readFile") || m.hasSysCall("writeFile");
+        boolean needTime = m.hasSysCall("time");
         StringBuilder sb = new StringBuilder();
         sb.append("package main\n\n");
-        if (needFmt) sb.append("import \"fmt\"\n\n");
+        if (needFmt || needOS || needTime) {
+            sb.append("import (\n");
+            if (needFmt)  sb.append("\t\"fmt\"\n");
+            if (needOS)   sb.append("\t\"os\"\n");
+            if (needTime) sb.append("\t\"time\"\n");
+            sb.append(")\n\n");
+        }
 
         for (Function fn : m.funcs.values()) {
             sb.append("func f_").append(fn.name).append("(");
@@ -276,6 +284,45 @@ public class BackendGo {
                         sb.append(ind).append("t").append(t)
                           .append(" := f_").append(i.str).append("(").append(args).append(")\n");
                         stack.push(t);
+                        break;
+                    }
+                    case SYS_CALL: {
+                        int argc = (int) i.operand;
+                        if (i.str.equals("time")) {
+                            if (argc != 0) throw new RuntimeException("time 参数个数错误: " + argc);
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(t)
+                              .append(" := time.Now().UnixMilli()\n");
+                            stack.push(t);
+                        } else if (i.str.equals("readFile")) {
+                            if (argc != 1) throw new RuntimeException("readFile 参数个数错误: " + argc);
+                            int path = stack.pop();
+                            int data = tempCounter++;
+                            int err = tempCounter++;
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(data).append(", t").append(err)
+                              .append(" := os.ReadFile(t").append(path).append(")\n");
+                            sb.append(ind).append("t").append(t).append(" := \"\"\n");
+                            sb.append(ind).append("if t").append(err).append(" == nil {\n");
+                            sb.append(ind).append("\tt").append(t).append(" = string(t").append(data).append(")\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else if (i.str.equals("writeFile")) {
+                            if (argc != 2) throw new RuntimeException("writeFile 参数个数错误: " + argc);
+                            int content = stack.pop(), path = stack.pop();
+                            int err = tempCounter++;
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(err)
+                              .append(" := os.WriteFile(t").append(path).append(", []byte(t")
+                              .append(content).append("), 0644)\n");
+                            sb.append(ind).append("t").append(t).append(" := int64(0)\n");
+                            sb.append(ind).append("if t").append(err).append(" != nil {\n");
+                            sb.append(ind).append("\tt").append(t).append(" = -1\n");
+                            sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else {
+                            throw new RuntimeException("未知标准库函数: " + i.str);
+                        }
                         break;
                     }
                     case RET: {
