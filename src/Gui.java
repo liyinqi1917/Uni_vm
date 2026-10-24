@@ -4,6 +4,9 @@ import java.awt.*;
 import java.io.ByteArrayOutputStream;
 import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 
 public class Gui {
 
@@ -14,7 +17,7 @@ public class Gui {
     private static void createAndShow() {
         JFrame frame = new JFrame("UniVM");
         frame.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
-        frame.setSize(900, 650);
+        frame.setSize(1000, 800);
 
         JTextField sourceField = new JTextField();
         sourceField.setEditable(false);
@@ -83,10 +86,21 @@ public class Gui {
         outRow.add(browseBackendOut, BorderLayout.EAST);
         configPanel.add(outRow, c);
 
+        // 中间主区域：可编辑源码
+        JTextArea codeArea = new JTextArea();
+        codeArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 14));
+        codeArea.setLineWrap(true);
+        codeArea.setWrapStyleWord(true);
+        codeArea.setTabSize(4);
+        JScrollPane editorScroll = new JScrollPane(codeArea);
+        editorScroll.setBorder(BorderFactory.createTitledBorder("代码编辑器"));
+
+        // 底部输出区
         JTextArea outputArea = new JTextArea();
         outputArea.setEditable(false);
         outputArea.setFont(new Font(Font.MONOSPACED, Font.PLAIN, 13));
-        JScrollPane scroll = new JScrollPane(outputArea);
+        JScrollPane outputScroll = new JScrollPane(outputArea);
+        outputScroll.setBorder(BorderFactory.createTitledBorder("输出结果"));
 
         JButton configureBtn = new JButton("Configure");
         JButton generateBtn = new JButton("Generate");
@@ -104,7 +118,15 @@ public class Gui {
             chooser.setFileFilter(new FileNameExtensionFilter(
                     "Uni/C/Python/Lua/Rust/Lisp 源文件", "uni", "c", "py", "lua", "rs", "lisp"));
             if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
-                sourceField.setText(chooser.getSelectedFile().getAbsolutePath());
+                java.io.File file = chooser.getSelectedFile();
+                sourceField.setText(file.getAbsolutePath());
+                try {
+                    codeArea.setText(new String(
+                            Files.readAllBytes(file.toPath()), StandardCharsets.UTF_8));
+                    codeArea.setCaretPosition(0);
+                } catch (Throwable ex) {
+                    outputArea.setText("读取源文件失败：\n" + ex.getMessage());
+                }
             }
         });
 
@@ -126,11 +148,12 @@ public class Gui {
 
         configureBtn.addActionListener(e -> {
             String src = sourceField.getText();
-            if (src.isEmpty()) { outputArea.setText("请先选择源文件"); return; }
+            if (src.isEmpty()) {
+                outputArea.setText("请先选择源文件（用于确定语言后缀）");
+                return;
+            }
 
             java.util.List<String> args = new java.util.ArrayList<>();
-            args.add(src);
-
             if (execModeBox.getSelectedIndex() == 1) args.add("--no-jit");
             if (!typeCheckBox.isSelected()) args.add("--no-check");
 
@@ -141,12 +164,15 @@ public class Gui {
                 args.add("--run");
             } else if ("编译并运行".equals(outMode)) args.add("--run");
 
-            runInBackground(args, outputArea);
+            runInBackground(src, codeArea.getText(), args, outputArea);
         });
 
         generateBtn.addActionListener(e -> {
             String src = sourceField.getText();
-            if (src.isEmpty()) { outputArea.setText("请先选择源文件"); return; }
+            if (src.isEmpty()) {
+                outputArea.setText("请先选择源文件（用于确定语言后缀）");
+                return;
+            }
 
             int backendIdx = backendBox.getSelectedIndex();
             if (backendIdx == 0) { outputArea.setText("请先选择一个后端"); return; }
@@ -155,7 +181,6 @@ public class Gui {
             if (outPath.isEmpty()) { outputArea.setText("请先选择后端输出路径"); return; }
 
             java.util.List<String> args = new java.util.ArrayList<>();
-            args.add(src);
             switch (backendIdx) {
                 case 1: args.add("--c");   args.add(outPath + "\\out"); break;
                 case 2: args.add("--cpp"); args.add(outPath + "\\out"); break;
@@ -164,20 +189,22 @@ public class Gui {
                 case 5: args.add("--py");  args.add(outPath + "\\out"); break;
             }
 
-            runInBackground(args, outputArea);
+            runInBackground(src, codeArea.getText(), args, outputArea);
         });
 
         runBtn.addActionListener(e -> {
             String src = sourceField.getText();
-            if (src.isEmpty()) { outputArea.setText("请先选择源文件"); return; }
+            if (src.isEmpty()) {
+                outputArea.setText("请先选择源文件（用于确定语言后缀）");
+                return;
+            }
 
             java.util.List<String> args = new java.util.ArrayList<>();
-            args.add(src);
             args.add("--run");
             if (execModeBox.getSelectedIndex() == 1) args.add("--no-jit");
             if (!typeCheckBox.isSelected()) args.add("--no-check");
 
-            runInBackground(args, outputArea);
+            runInBackground(src, codeArea.getText(), args, outputArea);
         });
 
         JPanel top = new JPanel(new BorderLayout(5, 5));
@@ -187,37 +214,83 @@ public class Gui {
 
         JPanel bottom = new JPanel(new BorderLayout(5, 5));
         bottom.add(buttonPanel, BorderLayout.NORTH);
-        bottom.add(scroll, BorderLayout.CENTER);
-        bottom.setBorder(BorderFactory.createEmptyBorder(4, 8, 8, 8));
+        bottom.add(outputScroll, BorderLayout.CENTER);
+        bottom.setBorder(BorderFactory.createEmptyBorder(0, 8, 8, 8));
+
+        JSplitPane split = new JSplitPane(JSplitPane.VERTICAL_SPLIT, editorScroll, bottom);
+        split.setResizeWeight(0.75);
+        split.setContinuousLayout(true);
+        split.setOneTouchExpandable(true);
+        split.setBorder(null);
 
         frame.setLayout(new BorderLayout());
         frame.add(top, BorderLayout.NORTH);
-        frame.add(bottom, BorderLayout.CENTER);
+        frame.add(split, BorderLayout.CENTER);
         frame.setLocationRelativeTo(null);
         frame.setVisible(true);
+        // 等窗口完成布局后再按比例定位，避免初始高度为 0 把编辑区压扁
+        SwingUtilities.invokeLater(() -> split.setDividerLocation(0.72));
     }
 
-    private static void runInBackground(java.util.List<String> args, JTextArea outputArea) {
+    // 源码从编辑器取；写入带原后缀的临时文件后交给 Main，finally 必定删除
+    private static void runInBackground(String sourcePath, String sourceText,
+                                        java.util.List<String> args, JTextArea outputArea) {
         outputArea.setText("");
         new Thread(() -> {
             PrintStream oldOut = System.out;
             PrintStream oldErr = System.err;
             ByteArrayOutputStream buf = new ByteArrayOutputStream();
+            PrintStream ps = null;
+            Path temp = null;
+
             try {
-                PrintStream ps = new PrintStream(buf, true, StandardCharsets.UTF_8);
+                ps = new PrintStream(buf, true, StandardCharsets.UTF_8);
                 System.setOut(ps);
                 System.setErr(ps);
 
-                Main.main(args.toArray(new String[0]));
+                temp = Files.createTempFile("univm_run_", sourceSuffix(sourcePath));
+                Files.write(temp, sourceText.getBytes(StandardCharsets.UTF_8));
+
+                java.util.List<String> fullArgs = new java.util.ArrayList<>();
+                fullArgs.add(temp.toString());
+                fullArgs.addAll(args);
+                Main.main(fullArgs.toArray(new String[0]));
 
             } catch (Throwable t) {
+                // Main.main 的编译/解析/类型错误统一进入下方输出区
                 t.printStackTrace();
             } finally {
+                if (temp != null) {
+                    try {
+                        Files.deleteIfExists(temp);
+                    } catch (Throwable delErr) {
+                        System.err.println("[警告] 临时文件删除失败: " + temp);
+                        delErr.printStackTrace();
+                    }
+                }
+
+                if (ps != null) {
+                    try { ps.flush(); } catch (Throwable ignored) { }
+                }
                 System.setOut(oldOut);
                 System.setErr(oldErr);
+                if (ps != null) {
+                    try { ps.close(); } catch (Throwable ignored) { }
+                }
+
                 String text = new String(buf.toByteArray(), StandardCharsets.UTF_8);
                 SwingUtilities.invokeLater(() -> outputArea.setText(text));
             }
         }).start();
+    }
+
+    // 保留原文件后缀（.lua/.rs/.lisp/.py/.c/.uni），供 Main 选择前端
+    private static String sourceSuffix(String sourcePath) {
+        String name = Paths.get(sourcePath).getFileName().toString();
+        int dot = name.lastIndexOf('.');
+        if (dot > 0 && dot < name.length() - 1) {
+            return name.substring(dot).toLowerCase();
+        }
+        return ".uni";
     }
 }
