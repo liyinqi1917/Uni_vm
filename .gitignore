@@ -35,6 +35,8 @@ maven/
 mingw64/
 polyglot/target/
 out/
+exe/
+UniVM.jar
 *.class
 *.jar
 *.exe

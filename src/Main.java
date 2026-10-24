@@ -10,28 +10,35 @@ import java.util.List;
 //                                         |-> BackendCpp -> g++   -> exe（.h + .cpp）
 //                                         |-> BackendGo  -> go    -> exe
 //                                         |-> BackendJava-> javac -> jar
+//                                         |-> BackendPy  -> python 源码
 //
 // 用法:
-//   java Main <input.uni> [--run] [--ir] [--profile] [--no-jit]
-//                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar]
+//   java Main <input.uni|input.py|input.c> [--run] [--ir] [--profile] [--no-jit]
+//                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]
 public class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
-            System.out.println("用法: java Main <input.uni> [--run] [--ir] [--profile] [--no-jit]");
-            System.out.println("                          [--c out] [--cpp base] [--go out.exe] [--jar out.jar]");
+            System.out.println("用法: java Main <input.uni|input.py|input.c> [--run] [--ir] [--profile] [--no-jit]");
+            System.out.println("                          [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
             return;
         }
 
         String source = new String(Files.readAllBytes(Paths.get(args[0])));
 
         // 前端：按扩展名选择语言（M5：多前端 → 同一 Module）
-        boolean isPython = args[0].toLowerCase().endsWith(".py");
+        // .c 复用 C 风格 Lexer/Parser（与 .uni 同一套大括号语法）
+        String lowerName = args[0].toLowerCase();
+        boolean isPython = lowerName.endsWith(".py");
+        boolean isC = lowerName.endsWith(".c");
         Program prog;
         if (isPython) {
             List<Token> pyTokens = new LexerPy(source).scanAllTokens();
             prog = new ParserPy(pyTokens).parseProgram();
+        } else if (isC) {
+            List<Token> cTokens = new Lexer(source).scanAllTokens();
+            prog = new Parser(cTokens).parseProgram();
         } else {
             List<Token> tokens = new Lexer(source).scanAllTokens();
             prog = new Parser(tokens).parseProgram();
@@ -116,6 +123,16 @@ public class Main {
                     exec("javac", "Gen.java");
                     exec("jar", "cfe", out, "Gen", "Gen.class");
                     System.out.println("已打包为 jar: " + out + "  (运行: java -jar " + out + ")");
+                    didSomething = true;
+                    break;
+                }
+
+                case "--py": {
+                    String out = args[++i];
+                    String pyPath = out.toLowerCase().endsWith(".py") ? out : out + ".py";
+                    Files.write(Paths.get(pyPath),
+                            BackendPy.emit(module).getBytes(java.nio.charset.StandardCharsets.UTF_8));
+                    System.out.println("已生成 Python 源码: " + pyPath);
                     didSomething = true;
                     break;
                 }
