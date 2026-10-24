@@ -13,15 +13,17 @@ import java.util.List;
 //                                         |-> BackendPy  -> python 源码
 //
 // 用法:
-//   java Main <input.uni|input.py|input.c> [--run] [--ir] [--profile] [--no-jit]
+//   java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>
+//                         [--run] [--ir] [--profile] [--no-jit]
 //                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]
 public class Main {
 
     public static void main(String[] args) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
-            System.out.println("用法: java Main <input.uni|input.py|input.c> [--run] [--ir] [--profile] [--no-jit]");
-            System.out.println("                          [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
+            System.out.println("用法: java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>");
+            System.out.println("                         [--run] [--ir] [--profile] [--no-jit]");
+            System.out.println("                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
             return;
         }
 
@@ -31,7 +33,10 @@ public class Main {
         // .c 复用 C 风格 Lexer/Parser（与 .uni 同一套大括号语法）
         String lowerName = args[0].toLowerCase();
         boolean isPython = lowerName.endsWith(".py");
-        boolean isC = lowerName.endsWith(".c");
+        boolean isC      = lowerName.endsWith(".c");
+        boolean isLua    = lowerName.endsWith(".lua");
+        boolean isRust   = lowerName.endsWith(".rs");
+        boolean isLisp   = lowerName.endsWith(".lisp");
         Program prog;
         if (isPython) {
             List<Token> pyTokens = new LexerPy(source).scanAllTokens();
@@ -39,6 +44,15 @@ public class Main {
         } else if (isC) {
             List<Token> cTokens = new Lexer(source).scanAllTokens();
             prog = new Parser(cTokens).parseProgram();
+        } else if (isLua) {
+            List<Token> luaTokens = new LexerLua(source).scanAllTokens();
+            prog = new ParserLua(luaTokens).parseProgram();
+        } else if (isRust) {
+            List<Token> rsTokens = new LexerRs(source).scanAllTokens();
+            prog = new ParserRs(rsTokens).parseProgram();
+        } else if (isLisp) {
+            List<Token> lispTokens = new LexerLisp(source).scanAllTokens();
+            prog = new ParserLisp(lispTokens).parseProgram();
         } else {
             List<Token> tokens = new Lexer(source).scanAllTokens();
             prog = new Parser(tokens).parseProgram();

@@ -25,7 +25,9 @@ public class Gui {
         sourcePanel.add(sourceField, BorderLayout.CENTER);
         sourcePanel.add(browseSource, BorderLayout.EAST);
 
-        JComboBox<String> frontendBox = new JComboBox<>(new String[]{"自动识别", ".uni", "C 风格", "Python 风格"});
+        JComboBox<String> frontendBox = new JComboBox<>(new String[]{
+                "自动识别", ".uni", "C 风格", "Python 风格", "Lua 风格", "Rust 风格", "Lisp 风格"
+        });
         JComboBox<String> execModeBox = new JComboBox<>(new String[]{"解释器 + JIT", "解释器（--no-jit）"});
         JCheckBox typeCheckBox = new JCheckBox("启用类型检查", true);
         JComboBox<String> outputModeBox = new JComboBox<>(new String[]{"编译并运行", "仅编译", "输出字节码 --ir", "输出 profile --profile"});
@@ -99,7 +101,8 @@ public class Gui {
 
         browseSource.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser(".");
-            chooser.setFileFilter(new FileNameExtensionFilter("Uni/C/Python 源文件", "uni", "c", "py"));
+            chooser.setFileFilter(new FileNameExtensionFilter(
+                    "Uni/C/Python/Lua/Rust/Lisp 源文件", "uni", "c", "py", "lua", "rs", "lisp"));
             if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
                 sourceField.setText(chooser.getSelectedFile().getAbsolutePath());
             }
