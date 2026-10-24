@@ -34,7 +34,7 @@ public class Gui {
         JComboBox<String> execModeBox = new JComboBox<>(new String[]{"解释器 + JIT", "解释器（--no-jit）"});
         JCheckBox typeCheckBox = new JCheckBox("启用类型检查", true);
         JComboBox<String> outputModeBox = new JComboBox<>(new String[]{"编译并运行", "仅编译", "输出字节码 --ir", "输出 profile --profile"});
-        JComboBox<String> backendBox = new JComboBox<>(new String[]{"无", "C", "C++", "Go", "JAR", "Python"});
+        JComboBox<String> backendBox = new JComboBox<>(new String[]{"无", "C", "C++", "Go", "JAR", "Python", "WASM"});
 
         JTextField backendOutField = new JTextField();
         backendOutField.setEnabled(false);
@@ -187,6 +187,7 @@ public class Gui {
                 case 3: args.add("--go");  args.add(outPath + "\\out.exe"); break;
                 case 4: args.add("--jar"); args.add(outPath + "\\out.jar"); break;
                 case 5: args.add("--py");  args.add(outPath + "\\out"); break;
+                case 6: args.add("--wasm"); args.add(outPath + "\\out"); break;
             }
 
             runInBackground(src, codeArea.getText(), args, outputArea);
@@ -256,6 +257,15 @@ public class Gui {
                 fullArgs.addAll(args);
                 Main.main(fullArgs.toArray(new String[0]));
 
+                int wasmArg = args.indexOf("--wasm");
+                if (wasmArg >= 0 && wasmArg + 1 < args.size()) {
+                    String base = args.get(wasmArg + 1);
+                    if (base.toLowerCase().endsWith(".wat")) {
+                        base = base.substring(0, base.length() - 4);
+                    }
+                    openInBrowser(Paths.get(base + ".html"));
+                }
+
             } catch (Throwable t) {
                 // Main.main 的编译/解析/类型错误统一进入下方输出区
                 t.printStackTrace();
@@ -282,6 +292,37 @@ public class Gui {
                 SwingUtilities.invokeLater(() -> outputArea.setText(text));
             }
         }).start();
+    }
+
+    // WASM 生成后自动打开配套 HTML；浏览器不能直接执行 .wat。
+    private static void openInBrowser(Path html) {
+        Path abs = html.toAbsolutePath();
+        try {
+            if (Desktop.isDesktopSupported()
+                    && Desktop.getDesktop().isSupported(Desktop.Action.BROWSE)) {
+                Desktop.getDesktop().browse(abs.toUri());
+                System.out.println("已在浏览器打开: " + abs);
+                return;
+            }
+        } catch (Throwable ignored) {
+            // 继续尝试平台命令
+        }
+
+        try {
+            String os = System.getProperty("os.name", "").toLowerCase();
+            ProcessBuilder pb;
+            if (os.contains("win")) {
+                pb = new ProcessBuilder("rundll32", "url.dll,FileProtocolHandler", abs.toString());
+            } else if (os.contains("mac")) {
+                pb = new ProcessBuilder("open", abs.toString());
+            } else {
+                pb = new ProcessBuilder("xdg-open", abs.toString());
+            }
+            pb.start();
+            System.out.println("已在浏览器打开: " + abs);
+        } catch (Throwable t) {
+            System.out.println("[警告] 自动打开浏览器失败，请手动打开: " + abs);
+        }
     }
 
     // 保留原文件后缀（.lua/.rs/.lisp/.py/.c/.uni），供 Main 选择前端

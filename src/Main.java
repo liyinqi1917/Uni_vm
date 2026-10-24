@@ -1,4 +1,5 @@
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Paths;
 import java.util.List;
@@ -11,11 +12,13 @@ import java.util.List;
 //                                         |-> BackendGo  -> go    -> exe
 //                                         |-> BackendJava-> javac -> jar
 //                                         |-> BackendPy  -> python 源码
+//                                         |-> BackendWasm-> .wat + HTML 浏览器测试页
 //
 // 用法:
 //   java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>
 //                         [--run] [--ir] [--profile] [--no-jit]
 //                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]
+//                         [--wasm out]
 public class Main {
 
     public static void main(String[] args) throws Exception {
@@ -24,6 +27,7 @@ public class Main {
             System.out.println("用法: java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>");
             System.out.println("                         [--run] [--ir] [--profile] [--no-jit]");
             System.out.println("                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
+            System.out.println("                         [--wasm out]");
             return;
         }
 
@@ -150,6 +154,21 @@ public class Main {
                     Files.write(Paths.get(pyPath),
                             BackendPy.emit(module).getBytes(java.nio.charset.StandardCharsets.UTF_8));
                     System.out.println("已生成 Python 源码: " + pyPath);
+                    didSomething = true;
+                    break;
+                }
+
+                case "--wasm": {
+                    String out = args[++i];
+                    String watPath = out.toLowerCase().endsWith(".wat") ? out : out + ".wat";
+                    String htmlPath = watPath.substring(0, watPath.length() - 4) + ".html";
+                    String wat = BackendWasm.emit(module);
+                    Files.write(Paths.get(watPath), wat.getBytes(StandardCharsets.UTF_8));
+                    String title = Paths.get(watPath).getFileName().toString();
+                    Files.write(Paths.get(htmlPath),
+                            BackendWasm.browserTestPage(wat, title).getBytes(StandardCharsets.UTF_8));
+                    System.out.println("已生成 WebAssembly Text: " + watPath);
+                    System.out.println("已生成浏览器测试页: " + htmlPath);
                     didSomething = true;
                     break;
                 }
