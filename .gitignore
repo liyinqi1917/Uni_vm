@@ -47,6 +47,7 @@ UniVM.jar
 *.iml
 
 ### Compiler generated ###
+test_output.txt
 Gen.java
 Gen.class
 gen_main.go
