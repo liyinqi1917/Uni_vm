@@ -38,6 +38,7 @@ public class ArrayTypes {
                 Instruction i = (Instruction) n;
                 switch (i.op) {
                     case PUSH: st.push(0); break;
+                    case SCONST: st.push(0); break;
                     case LOAD: st.push(t.getOrDefault(i.str, 0)); break;
                     case STORE: {
                         int v = pop(st);
@@ -51,11 +52,12 @@ public class ArrayTypes {
                     case INEG: pop(st); st.push(0); break;
                     case IEQ: case INE: case ILT: case IGT: case ILE: case IGE:
                         pop(st); pop(st); st.push(0); break;
-                    case PRINT_INT: case POP: case RET: pop(st); break;
+                    case PRINT_INT: case PRINT_STR: case POP: case RET: pop(st); break;
                     case ANEW: st.push(1); break;
                     case AGET: pop(st); pop(st); st.push(0); break;
                     case ASET: pop(st); pop(st); pop(st); break;
                     case ALEN: pop(st); st.push(0); break;
+                    case SLEN: pop(st); st.push(0); break;
                     case CALL: {
                         for (int k = 0; k < i.operand; k++) pop(st);
                         st.push(0);

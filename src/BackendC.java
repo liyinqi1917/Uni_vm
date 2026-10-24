@@ -13,10 +13,12 @@ public class BackendC {
     public static String emit(Module m) {
         boolean needStdio = anyPrint(m);
         boolean needAlloc = anyNode(m, Opcode.ANEW);
+        boolean needStrlen = anyNode(m, Opcode.SLEN);
         StringBuilder sb = new StringBuilder();
         if (needStdio) sb.append("#include <stdio.h>\n");
         if (needAlloc) sb.append("#include <stdlib.h>\n");
-        if (needStdio || needAlloc) sb.append('\n');
+        if (needStrlen) sb.append("#include <string.h>\n");
+        if (needStdio || needAlloc || needStrlen) sb.append('\n');
 
         // 原型
         for (Function fn : m.funcs.values()) {
@@ -38,7 +40,7 @@ public class BackendC {
                   .append(fn.params.get(k));
             }
             sb.append(") {\n");
-            Emitter e = new Emitter(sb);
+            Emitter e = new Emitter(sb, m);
             e.declareLocals(fn.body, fn.params, fn.paramTypes, "    ");
             e.block(fn.body, "    ");
             if (!alwaysReturns(fn.body)) sb.append("    return 0;\n}\n\n");
@@ -46,7 +48,7 @@ public class BackendC {
         }
 
         sb.append("int main(void) {\n");
-        Emitter mainE = new Emitter(sb);
+        Emitter mainE = new Emitter(sb, m);
         mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "    ");
         mainE.block(m.main, "    ");
         sb.append("    return 0;\n}\n");
@@ -54,8 +56,7 @@ public class BackendC {
     }
 
     private static boolean anyPrint(Module m) {
-        for (Function fn : m.funcs.values()) if (hasNode(fn.body, Opcode.PRINT_INT)) return true;
-        return hasNode(m.main, Opcode.PRINT_INT);
+        return anyNode(m, Opcode.PRINT_INT) || anyNode(m, Opcode.PRINT_STR);
     }
 
     private static boolean anyNode(Module m, Opcode op) {
@@ -104,6 +105,24 @@ public class BackendC {
         }
     }
 
+    private static String cLiteral(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    if (c < 0x20) b.append(String.format("\\x%02x", (int) c));
+                    else b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
+
     private static String symbol(Opcode op) {
         switch (op) {
             case IADD: return "+"; case ISUB: return "-";
@@ -117,13 +136,18 @@ public class BackendC {
 
     private static class Emitter {
         final StringBuilder sb;
+        final Module module;
         int tempCounter = 0;
         final Deque<Integer> stack = new ArrayDeque<>();
         final Set<String> paramSet = new java.util.HashSet<>();
         final Set<Integer> tempIsArr = new java.util.HashSet<>();
         Set<String> arrLocals = new java.util.HashSet<>();
+        Set<String> strLocals = new java.util.HashSet<>();
 
-        Emitter(StringBuilder sb) { this.sb = sb; }
+        Emitter(StringBuilder sb, Module module) {
+            this.sb = sb;
+            this.module = module;
+        }
 
         String ref(String name) { return (paramSet.contains(name) ? "p_" : "v_") + name; }
 
@@ -137,11 +161,13 @@ public class BackendC {
                            List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
             arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
+            strLocals = StringTypes.inferStrings(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
             for (String v : names) {
                 if (arrLocals.contains(v)) sb.append(ind).append("long long *v_").append(v).append(" = 0;\n");
+                else if (strLocals.contains(v)) sb.append(ind).append("const char *v_").append(v).append(" = 0;\n");
                 else sb.append(ind).append("long long v_").append(v).append(" = 0;\n");
             }
         }
@@ -170,11 +196,19 @@ public class BackendC {
                         stack.push(t);
                         break;
                     }
+                    case SCONST: {
+                        int t = newTemp(false);
+                        sb.append(ind).append("const char *t").append(t).append(" = ")
+                          .append(cLiteral(module.stringPool.get((int) i.operand))).append(";\n");
+                        stack.push(t);
+                        break;
+                    }
                     case LOAD: {
                         boolean arr = arrLocals.contains(i.str); // 数组参数也走数组路径
+                        boolean str = strLocals.contains(i.str);
                         int t = newTemp(arr);
-                        sb.append(ind).append(arr ? "long long *t" : "long long t").append(t)
-                          .append(" = ").append(ref(i.str)).append(";\n");
+                        sb.append(ind).append(arr ? "long long *t" : (str ? "const char *t" : "long long t"))
+                          .append(t).append(" = ").append(ref(i.str)).append(";\n");
                         stack.push(t);
                         break;
                     }
@@ -207,6 +241,19 @@ public class BackendC {
                     case PRINT_INT: {
                         int a = stack.pop();
                         sb.append(ind).append("printf(\"%lld\\n\", t").append(a).append(");\n");
+                        break;
+                    }
+                    case PRINT_STR: {
+                        int a = stack.pop();
+                        sb.append(ind).append("printf(\"%s\\n\", t").append(a).append(");\n");
+                        break;
+                    }
+                    case SLEN: {
+                        int a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("long long t").append(t)
+                          .append(" = (long long)strlen(t").append(a).append(");\n");
+                        stack.push(t);
                         break;
                     }
                     case POP: { stack.pop(); break; }

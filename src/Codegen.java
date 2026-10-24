@@ -10,11 +10,14 @@ import java.util.Map;
 //   RET 弹出当前帧栈顶作为返回值，压回调用方栈。
 enum Opcode {
     PUSH(1),       // 立即数压栈
+    SCONST(1),     // 压入字符串池中下标为 operand 的字符串
     LOAD(1),       // 压入局部变量值
     STORE(1),      // 弹出栈顶存入局部变量
     IADD(0), ISUB(0), IMUL(0), IDIV(0), INEG(0),
     IEQ(0), INE(0), ILT(0), IGT(0), ILE(0), IGE(0),
-    PRINT_INT(0),  // 弹出栈顶打印
+    PRINT_INT(0),  // 弹出栈顶整数打印
+    PRINT_STR(0),  // 弹出栈顶字符串打印
+    SLEN(0),       // 弹出字符串，压入长度
     POP(0),        // 丢弃栈顶（表达式语句）
     ANEW(0),       // 弹出 size，压入数组引用
     AGET(0),       // 弹出 index、array，压入元素
@@ -89,10 +92,19 @@ class Function {
     }
 }
 
-// 编译模块：函数表 + main
+// 编译模块：函数表 + main + 字符串常量池
 class Module {
     final Map<String, Function> funcs = new LinkedHashMap<>();
     final List<BytecodeNode> main = new ArrayList<>();
+    final List<String> stringPool = new ArrayList<>();
+
+    // 字符串去重：相同字面量复用同一个池下标
+    int internString(String s) {
+        int idx = stringPool.indexOf(s);
+        if (idx >= 0) return idx;
+        stringPool.add(s);
+        return stringPool.size() - 1;
+    }
 }
 
 // ===== Codegen：AST -> UniVM 字节码 =====
@@ -103,48 +115,52 @@ public class Codegen {
         for (Stmt s : prog.stmts) {
             if (s instanceof FuncDecl) {
                 FuncDecl f = (FuncDecl) s;
-                m.funcs.put(f.name, new Function(f.name, f.params, f.paramTypes, blockNodes(f.body)));
+                m.funcs.put(f.name, new Function(f.name, f.params, f.paramTypes, blockNodes(f.body, m)));
             } else {
-                genStmt(s, m.main);
+                genStmt(s, m.main, m);
             }
         }
         return m;
     }
 
-    private static void genStmt(Stmt s, List<BytecodeNode> out) {
+    private static boolean isString(Expr e) {
+        return e instanceof StrLit || e.type == TypeChecker.T.STRING;
+    }
+
+    private static void genStmt(Stmt s, List<BytecodeNode> out, Module m) {
         if (s instanceof Let) {
             Let l = (Let) s;
-            genExpr(l.value, out);
+            genExpr(l.value, out, m);
             out.add(new Instruction(Opcode.STORE, l.name));
         } else if (s instanceof Assign) {
             Assign a = (Assign) s;
-            genExpr(a.value, out);
+            genExpr(a.value, out, m);
             out.add(new Instruction(Opcode.STORE, a.name));
         } else if (s instanceof ExprStmt) {
-            genExpr(((ExprStmt) s).expr, out);
+            genExpr(((ExprStmt) s).expr, out, m);
             out.add(new Instruction(Opcode.POP, 0));
         } else if (s instanceof IndexSet) {
             IndexSet a = (IndexSet) s;
-            genExpr(a.array, out);
-            genExpr(a.index, out);
-            genExpr(a.value, out);
+            genExpr(a.array, out, m);
+            genExpr(a.index, out, m);
+            genExpr(a.value, out, m);
             out.add(new Instruction(Opcode.ASET, 0));
         } else if (s instanceof Print) {
             Print p = (Print) s;
-            genExpr(p.value, out);
-            out.add(new Instruction(Opcode.PRINT_INT, 0));
+            genExpr(p.value, out, m);
+            out.add(new Instruction(isString(p.value) ? Opcode.PRINT_STR : Opcode.PRINT_INT, 0));
         } else if (s instanceof Block) {
-            out.addAll(blockNodes((Block) s));
+            out.addAll(blockNodes((Block) s, m));
         } else if (s instanceof If) {
             If f = (If) s;
-            List<BytecodeNode> els = f.els == null ? new ArrayList<>() : stmtNodes(f.els);
-            out.add(new IfNode(exprNodes(f.cond), blockNodes(f.thenBlock), els));
+            List<BytecodeNode> els = f.els == null ? new ArrayList<>() : stmtNodes(f.els, m);
+            out.add(new IfNode(exprNodes(f.cond, m), blockNodes(f.thenBlock, m), els));
         } else if (s instanceof While) {
             While w = (While) s;
-            out.add(new WhileNode(exprNodes(w.cond), blockNodes(w.body)));
+            out.add(new WhileNode(exprNodes(w.cond, m), blockNodes(w.body, m)));
         } else if (s instanceof Return) {
             Return r = (Return) s;
-            if (r.value != null) genExpr(r.value, out);
+            if (r.value != null) genExpr(r.value, out, m);
             else out.add(new Instruction(Opcode.PUSH, 0));
             out.add(new Instruction(Opcode.RET, 0));
         } else if (s instanceof FuncDecl) {
@@ -154,54 +170,58 @@ public class Codegen {
         }
     }
 
-    private static List<BytecodeNode> exprNodes(Expr e) {
+    private static List<BytecodeNode> exprNodes(Expr e, Module m) {
         List<BytecodeNode> l = new ArrayList<>();
-        genExpr(e, l);
+        genExpr(e, l, m);
         return l;
     }
 
-    private static List<BytecodeNode> blockNodes(Block b) {
+    private static List<BytecodeNode> blockNodes(Block b, Module m) {
         List<BytecodeNode> l = new ArrayList<>();
-        for (Stmt s : b.stmts) genStmt(s, l);
+        for (Stmt s : b.stmts) genStmt(s, l, m);
         return l;
     }
 
-    private static List<BytecodeNode> stmtNodes(Stmt s) {
+    private static List<BytecodeNode> stmtNodes(Stmt s, Module m) {
         List<BytecodeNode> l = new ArrayList<>();
-        genStmt(s, l);
+        genStmt(s, l, m);
         return l;
     }
 
-    private static void genExpr(Expr e, List<BytecodeNode> out) {
+    private static void genExpr(Expr e, List<BytecodeNode> out, Module m) {
         if (e instanceof Num) {
             out.add(new Instruction(Opcode.PUSH, ((Num) e).value));
+        } else if (e instanceof StrLit) {
+            int idx = m.internString(((StrLit) e).value);
+            out.add(new Instruction(Opcode.SCONST, idx));
         } else if (e instanceof Call) {
             Call c = (Call) e;
-            if (c.name.equals("len") && c.args.size() == 1) { // 内建 len
-                genExpr(c.args.get(0), out);
-                out.add(new Instruction(Opcode.ALEN, 0));
+            if (c.name.equals("len") && c.args.size() == 1) { // 内建 len：数组或字符串
+                Expr arg = c.args.get(0);
+                genExpr(arg, out, m);
+                out.add(new Instruction(isString(arg) ? Opcode.SLEN : Opcode.ALEN, 0));
                 return;
             }
-            for (Expr arg : c.args) genExpr(arg, out); // 实参从左到右
+            for (Expr arg : c.args) genExpr(arg, out, m); // 实参从左到右
             out.add(new Instruction(Opcode.CALL, c.name, c.args.size()));
         } else if (e instanceof ArrayNew) {
-            genExpr(((ArrayNew) e).size, out);
+            genExpr(((ArrayNew) e).size, out, m);
             out.add(new Instruction(Opcode.ANEW, 0));
         } else if (e instanceof IndexGet) {
             IndexGet g = (IndexGet) e;
-            genExpr(g.array, out);
-            genExpr(g.index, out);
+            genExpr(g.array, out, m);
+            genExpr(g.index, out, m);
             out.add(new Instruction(Opcode.AGET, 0));
         } else if (e instanceof Var) {
             out.add(new Instruction(Opcode.LOAD, ((Var) e).name));
         } else if (e instanceof Unary) {
             Unary u = (Unary) e;
-            genExpr(u.operand, out);
+            genExpr(u.operand, out, m);
             if (u.op == '-') out.add(new Instruction(Opcode.INEG, 0));
         } else if (e instanceof Binary) {
             Binary b = (Binary) e;
-            genExpr(b.left, out);
-            genExpr(b.right, out);
+            genExpr(b.left, out, m);
+            genExpr(b.right, out, m);
             switch (b.op) {
                 case "+":  out.add(new Instruction(Opcode.IADD, 0)); break;
                 case "-":  out.add(new Instruction(Opcode.ISUB, 0)); break;

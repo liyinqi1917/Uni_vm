@@ -43,12 +43,14 @@ public class Main {
             List<Token> tokens = new Lexer(source).scanAllTokens();
             prog = new Parser(tokens).parseProgram();
         }
-        Module module = Codegen.emit(prog);
-
-        // M6：静态类型检查（--no-check 关闭）
+        // 类型检查/推断必须先于 Codegen：Codegen 依赖表达式的 STRING 标注
+        // 来选择 PRINT_STR / SLEN 指令（--no-check 时仍做无报错推断）
         boolean noCheck = false;
         for (String a : args) if (a.equals("--no-check")) noCheck = true;
-        if (!noCheck) TypeChecker.check(prog);
+        if (noCheck) TypeChecker.infer(prog);
+        else TypeChecker.check(prog);
+
+        Module module = Codegen.emit(prog);
 
         boolean jitEnabled = true;
         boolean wantProfile = false;
@@ -75,6 +77,7 @@ public class Main {
 
                 case "--profile":
                 case "--no-jit":
+                case "--no-check":
                     break; // 仅作开关，不单独动作
 
                 case "--c": {

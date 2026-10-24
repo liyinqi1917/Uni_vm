@@ -12,7 +12,7 @@ import java.util.Map;
 // Python 前端没有 let，首次赋值即声明（Assign 到未声明变量时引入）。
 public class TypeChecker {
 
-    public enum T { INT, ARRAY }
+    public enum T { INT, ARRAY, STRING }
 
     private final Deque<Map<String, T>> scopes = new ArrayDeque<>();
     private final Map<String, List<T>> funParams = new LinkedHashMap<>();
@@ -25,6 +25,11 @@ public class TypeChecker {
         if (!c.errors.isEmpty()) {
             throw new RuntimeException("类型检查失败：\n  " + String.join("\n  ", c.errors));
         }
+    }
+
+    // --no-check：仍然做一次类型推断，供 Codegen 选择 PRINT_STR / SLEN 等指令，但不报错
+    public static void infer(Program p) {
+        new TypeChecker().run(p);
     }
 
     private void run(Program p) {
@@ -54,6 +59,11 @@ public class TypeChecker {
 
     private void requireInt(T t, String what) {
         if (t != T.INT) errors.add(what + " 需要整数类型，实际 " + t);
+    }
+
+    private T typed(Expr e, T t) {
+        e.type = t;
+        return t;
     }
 
     // 类型名 -> T：前端类型标注与后端共享的唯一映射表（未知名返回 null）
@@ -112,35 +122,37 @@ public class TypeChecker {
     }
 
     private T expr(Expr e) {
-        if (e instanceof Num) return T.INT;
+        if (e instanceof Num) return typed(e, T.INT);
+        if (e instanceof StrLit) return typed(e, T.STRING);
         if (e instanceof Var) {
             T t = lookup(((Var) e).name);
             if (t == null) errors.add("未定义的变量: " + ((Var) e).name);
-            return t == null ? T.INT : t;
+            return typed(e, t == null ? T.INT : t);
         }
         if (e instanceof Unary) {
             T t = expr(((Unary) e).operand);
             requireInt(t, "一元运算");
-            return T.INT;
+            return typed(e, T.INT);
         }
         if (e instanceof Binary) {
             Binary b = (Binary) e;
             T l = expr(b.left), r = expr(b.right);
             requireInt(l, "运算左值"); requireInt(r, "运算右值");
-            return T.INT; // 算术与比较都产生 INT（比较为 0/1）
+            return typed(e, T.INT); // 算术与比较都产生 INT（比较为 0/1）
         }
         if (e instanceof Call) {
             Call c = (Call) e;
-            if (c.name.equals("len") && c.args.size() == 1) { // 内建 len
+            if (c.name.equals("len") && c.args.size() == 1) { // 内建 len：数组或字符串
                 T at = expr(c.args.get(0));
-                if (at != T.ARRAY) errors.add("len 的参数必须是数组，实际 " + at);
-                return T.INT;
+                if (at != T.ARRAY && at != T.STRING)
+                    errors.add("len 的参数必须是数组或字符串，实际 " + at);
+                return typed(e, T.INT);
             }
             List<T> ps = funParams.get(c.name);
             if (ps == null) {
                 errors.add("调用了未定义的函数: " + c.name);
                 for (Expr a : c.args) expr(a);
-                return T.INT;
+                return typed(e, T.INT);
             }
             if (ps.size() != c.args.size()) {
                 errors.add("函数 " + c.name + " 参数个数不匹配：期望 " + ps.size() + "，实际 " + c.args.size());
@@ -151,11 +163,12 @@ public class TypeChecker {
                     errors.add("函数 " + c.name + " 第 " + (i + 1) + " 个实参类型不匹配：期望 "
                             + ps.get(i) + "，实际 " + at);
             }
-            return funRet.get(c.name);
+            T rt = funRet.get(c.name);
+            return typed(e, rt == null ? T.INT : rt);
         }
         if (e instanceof ArrayNew) {
             requireInt(expr(((ArrayNew) e).size), "数组大小");
-            return T.ARRAY;
+            return typed(e, T.ARRAY);
         }
         if (e instanceof IndexGet) {
             IndexGet g = (IndexGet) e;
@@ -163,9 +176,9 @@ public class TypeChecker {
             T it = expr(g.index);
             if (at != T.ARRAY) errors.add("下标取值目标必须是数组，实际 " + at);
             requireInt(it, "下标");
-            return T.INT;
+            return typed(e, T.INT);
         }
         errors.add("未知表达式节点: " + e);
-        return T.INT;
+        return typed(e, T.INT);
     }
 }

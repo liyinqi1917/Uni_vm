@@ -226,6 +226,7 @@ public class Parser {
             return new ArrayNew(size);
         }
         if (check(Token.Type.NUMBER)) return new Num(Long.parseLong(next().text));
+        if (check(Token.Type.STRING)) return new StrLit(next().text);
         if (check(Token.Type.IDENT)) {
             Token t = next();
             if (check(Token.Type.LPAREN)) {

@@ -4,12 +4,21 @@ import java.util.List;
 // ===== AST 节点 =====
 
 // 表达式基类
-abstract class Expr {}
+// type：TypeChecker 推断结果（INT / ARRAY / STRING），供 Codegen 选择指令
+abstract class Expr {
+    TypeChecker.T type;
+}
 
 // 整数常量
 class Num extends Expr {
     final long value;
     Num(long value) { this.value = value; }
+}
+
+// 字符串常量
+class StrLit extends Expr {
+    final String value;
+    StrLit(String value) { this.value = value; }
 }
 
 // 变量引用

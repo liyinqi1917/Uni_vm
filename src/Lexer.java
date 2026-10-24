@@ -14,7 +14,7 @@ public class Lexer {
     private void skipWhitespaceAndComments() {
         while (pos < input.length()) {
             char ch = input.charAt(pos);
-            if (Character.isWhitespace(ch)) {
+            if (Character.isWhitespace(ch) || ch == '\uFEFF') {
                 pos++;
             } else if (ch == '#') {
                 while (pos < input.length() && input.charAt(pos) != '\n') pos++;
@@ -29,6 +29,19 @@ public class Lexer {
         if (pos >= input.length()) return new Token(Token.Type.EOF, "");
 
         char ch = input.charAt(pos);
+
+        // 字符串字面量："..."（读到下一个双引号）
+        if (ch == '"') {
+            pos++;
+            int start = pos;
+            while (pos < input.length() && input.charAt(pos) != '"') pos++;
+            if (pos >= input.length()) {
+                throw new RuntimeException("字符串字面量缺少结束引号 (位置 " + start + ")");
+            }
+            String text = input.substring(start, pos);
+            pos++; // 跳过结束引号
+            return new Token(Token.Type.STRING, text);
+        }
 
         // 数字
         if (Character.isDigit(ch)) {

@@ -15,7 +15,7 @@ public class BackendPy {
         // 函数体：参数由 CALL 写入新帧，函数本身不接收 Python 参数
         for (Function fn : m.funcs.values()) {
             sb.append("def _fn_").append(fn.name).append("():\n");
-            Emitter e = new Emitter(sb);
+            Emitter e = new Emitter(sb, m);
             e.block(fn.body, "    ");
             if (fn.body.isEmpty()) sb.append("    pass\n");
             sb.append("\n\n");
@@ -35,7 +35,7 @@ public class BackendPy {
 
         // main 也编译为函数，RET 可正常抛出 _Return
         sb.append("def _main():\n");
-        Emitter mainE = new Emitter(sb);
+        Emitter mainE = new Emitter(sb, m);
         mainE.block(m.main, "    ");
         if (m.main.isEmpty()) sb.append("    pass\n");
         sb.append("\n\nif __name__ == \"__main__\":\n");
@@ -138,6 +138,14 @@ public class BackendPy {
                 print(stack.pop())
 
 
+            def PRINT_STR():
+                print(stack.pop())
+
+
+            def SLEN():
+                stack.append(len(stack.pop()))
+
+
             def POP():
                 stack.pop()
 
@@ -195,10 +203,32 @@ public class BackendPy {
         return "'" + s.replace("\\", "\\\\").replace("'", "\\'") + "'";
     }
 
+    private static String pyLiteral(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    if (c < 0x20) b.append(String.format("\\x%02x", (int) c));
+                    else b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
+
     private static class Emitter {
         private final StringBuilder sb;
+        private final Module module;
 
-        Emitter(StringBuilder sb) { this.sb = sb; }
+        Emitter(StringBuilder sb, Module module) {
+            this.sb = sb;
+            this.module = module;
+        }
 
         void block(List<BytecodeNode> ns, String ind) {
             for (BytecodeNode n : ns) node(n, ind);
@@ -213,6 +243,7 @@ public class BackendPy {
                 Instruction i = (Instruction) n;
                 switch (i.op) {
                     case PUSH:      line(ind, "PUSH(" + i.operand + ")"); break;
+                    case SCONST:    line(ind, "PUSH(" + pyLiteral(module.stringPool.get((int) i.operand)) + ")"); break;
                     case LOAD:      line(ind, "LOAD(" + pyString(i.str) + ")"); break;
                     case STORE:     line(ind, "STORE(" + pyString(i.str) + ")"); break;
                     case IADD:      line(ind, "IADD()"); break;
@@ -227,6 +258,8 @@ public class BackendPy {
                     case ILE:       line(ind, "ILE()"); break;
                     case IGE:       line(ind, "IGE()"); break;
                     case PRINT_INT: line(ind, "PRINT_INT()"); break;
+                    case PRINT_STR: line(ind, "PRINT_STR()"); break;
+                    case SLEN:      line(ind, "SLEN()"); break;
                     case POP:       line(ind, "POP()"); break;
                     case ANEW:      line(ind, "ANEW()"); break;
                     case AGET:      line(ind, "AGET()"); break;

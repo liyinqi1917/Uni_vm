@@ -22,7 +22,7 @@ public class BackendGo {
                   .append(fn.paramTypes.get(k) == TypeChecker.T.ARRAY ? " []int64" : " int64");
             }
             sb.append(") int64 {\n");
-            Emitter e = new Emitter(sb);
+            Emitter e = new Emitter(sb, m);
             e.declareLocals(fn.body, fn.params, fn.paramTypes, "\t");
             e.block(fn.body, "\t");
             if (!alwaysReturns(fn.body)) sb.append("\treturn 0\n}\n\n");
@@ -30,7 +30,7 @@ public class BackendGo {
         }
 
         sb.append("func main() {\n");
-        Emitter mainE = new Emitter(sb);
+        Emitter mainE = new Emitter(sb, m);
         mainE.declareLocals(m.main, new ArrayList<>(), new ArrayList<>(), "\t");
         mainE.block(m.main, "\t");
         sb.append("}\n");
@@ -44,7 +44,10 @@ public class BackendGo {
 
     private static boolean hasPrint(List<BytecodeNode> ns) {
         for (BytecodeNode n : ns) {
-            if (n instanceof Instruction && ((Instruction) n).op == Opcode.PRINT_INT) return true;
+            if (n instanceof Instruction) {
+                Opcode op = ((Instruction) n).op;
+                if (op == Opcode.PRINT_INT || op == Opcode.PRINT_STR) return true;
+            }
             if (n instanceof IfNode) {
                 IfNode f = (IfNode) n;
                 if (hasPrint(f.cond) || hasPrint(f.then) || hasPrint(f.els)) return true;
@@ -83,6 +86,24 @@ public class BackendGo {
         }
     }
 
+    private static String goLiteral(String s) {
+        StringBuilder b = new StringBuilder("\"");
+        for (int k = 0; k < s.length(); k++) {
+            char c = s.charAt(k);
+            switch (c) {
+                case '\\': b.append("\\\\"); break;
+                case '"':  b.append("\\\""); break;
+                case '\n': b.append("\\n"); break;
+                case '\r': b.append("\\r"); break;
+                case '\t': b.append("\\t"); break;
+                default:
+                    if (c < 0x20) b.append(String.format("\\x%02x", (int) c));
+                    else b.append(c);
+            }
+        }
+        return b.append('"').toString();
+    }
+
     private static String symbol(Opcode op) {
         switch (op) {
             case IADD: return "+"; case ISUB: return "-";
@@ -96,11 +117,15 @@ public class BackendGo {
 
     private static class Emitter {
         final StringBuilder sb;
+        final Module module;
         int tempCounter = 0;
         final Deque<Integer> stack = new ArrayDeque<>();
         final java.util.Set<String> paramSet = new java.util.HashSet<>();
 
-        Emitter(StringBuilder sb) { this.sb = sb; }
+        Emitter(StringBuilder sb, Module module) {
+            this.sb = sb;
+            this.module = module;
+        }
 
         String ref(String name) { return (paramSet.contains(name) ? "p_" : "v_") + name; }
 
@@ -108,11 +133,13 @@ public class BackendGo {
                            List<TypeChecker.T> paramTypes, String ind) {
             paramSet.addAll(params);
             Set<String> arrLocals = ArrayTypes.inferArrays(body, params, paramTypes);
+            Set<String> strLocals = StringTypes.inferStrings(body, params, paramTypes);
             Set<String> names = new LinkedHashSet<>();
             storeNames(body, names);
             for (String p : params) names.remove(p);
             for (String v : names) {
                 if (arrLocals.contains(v)) sb.append(ind).append("var v_").append(v).append(" []int64\n");
+                else if (strLocals.contains(v)) sb.append(ind).append("var v_").append(v).append(" string\n");
                 else sb.append(ind).append("var v_").append(v).append(" int64 = 0\n");
             }
         }
@@ -140,6 +167,13 @@ public class BackendGo {
                         int t = tempCounter++;
                         sb.append(ind).append("t").append(t)
                           .append(" := int64(").append(i.operand).append(")\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case SCONST: {
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t).append(" := ")
+                          .append(goLiteral(module.stringPool.get((int) i.operand))).append("\n");
                         stack.push(t);
                         break;
                     }
@@ -187,7 +221,24 @@ public class BackendGo {
                         sb.append(ind).append("fmt.Println(t").append(a).append(")\n");
                         break;
                     }
-                    case POP: { stack.pop(); break; }
+                    case PRINT_STR: {
+                        int a = stack.pop();
+                        sb.append(ind).append("fmt.Println(t").append(a).append(")\n");
+                        break;
+                    }
+                    case SLEN: {
+                        int a = stack.pop();
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t)
+                          .append(" := int64(len(t").append(a).append("))\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case POP: {
+                        int a = stack.pop();
+                        sb.append(ind).append("_ = t").append(a).append("\n");
+                        break;
+                    }
                     case ANEW: {
                         int s = stack.pop();
                         int t = tempCounter++;

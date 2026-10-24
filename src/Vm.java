@@ -10,9 +10,10 @@ import java.util.Map;
 public class Vm {
 
     // 解释帧（局部变量表 + 操作数栈）
+    // 值统一用 Object 承载：整数/数组句柄为 Long，字符串为 String
     static class Frame {
-        final Map<String, Long> locals = new HashMap<>();
-        final Deque<Long> stack = new ArrayDeque<>();
+        final Map<String, Object> locals = new HashMap<>();
+        final Deque<Object> stack = new ArrayDeque<>();
         Function fn; // 该帧所属函数；main 帧为 null
         final Map<WhileNode, Integer> loopHits = new java.util.IdentityHashMap<>();
     }
@@ -39,7 +40,9 @@ public class Vm {
 
     private Vm(Module module, boolean jitEnabled) {
         this.module = module;
-        this.jit = new Jit(module, jitEnabled);
+        // JIT 的槽位/操作数栈是原生 long[]，无法承载 String；
+        // 含字符串常量的模块统一走解释器，整数/数组模块保持原 JIT 行为。
+        this.jit = new Jit(module, jitEnabled && module.stringPool.isEmpty());
     }
 
     public static Vm create(Module module, boolean jitEnabled) { return new Vm(module, jitEnabled); }
@@ -63,6 +66,18 @@ public class Vm {
 
     private Frame cur() { return callStack.peek(); }
 
+    private static long asLong(Object v) {
+        if (v instanceof Long) return (Long) v;
+        throw new RuntimeException("运行时类型错误：期望整数，实际 "
+                + (v == null ? "null" : v.getClass().getSimpleName()));
+    }
+
+    private static String asString(Object v) {
+        if (v instanceof String) return (String) v;
+        throw new RuntimeException("运行时类型错误：期望字符串，实际 "
+                + (v == null ? "null" : v.getClass().getSimpleName()));
+    }
+
     private void exec(List<BytecodeNode> ns) {
         for (BytecodeNode n : ns) {
             if (n instanceof Instruction) {
@@ -70,14 +85,14 @@ public class Vm {
             } else if (n instanceof IfNode) {
                 IfNode f = (IfNode) n;
                 exec(f.cond);
-                long c = cur().stack.pop();
+                long c = asLong(cur().stack.pop());
                 exec(c != 0 ? f.then : f.els);
             } else if (n instanceof WhileNode) {
                 WhileNode w = (WhileNode) n;
                 Frame fr = cur();
                 while (true) {
                     exec(w.cond);
-                    long c = cur().stack.pop();
+                    long c = asLong(cur().stack.pop());
                     if (c == 0) break;
                     exec(w.body);
                     // 回边计数 → OSR
@@ -91,47 +106,54 @@ public class Vm {
     private void inst(Instruction ins) {
         Frame f = cur();
         switch (ins.op) {
-            case PUSH:  f.stack.push(ins.operand); break;
-            case LOAD:  f.stack.push(f.locals.getOrDefault(ins.str, 0L)); break;
-            case STORE: f.locals.put(ins.str, f.stack.pop()); break;
-            case IADD: { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a + b); break; }
-            case ISUB: { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a - b); break; }
-            case IMUL: { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a * b); break; }
-            case IDIV: { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a / b); break; }
-            case INEG: f.stack.push(-f.stack.pop()); break;
-            case IEQ:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a == b ? 1L : 0L); break; }
-            case INE:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a != b ? 1L : 0L); break; }
-            case ILT:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a < b ? 1L : 0L); break; }
-            case IGT:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a > b ? 1L : 0L); break; }
-            case ILE:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a <= b ? 1L : 0L); break; }
-            case IGE:  { long b = f.stack.pop(), a = f.stack.pop(); f.stack.push(a >= b ? 1L : 0L); break; }
-            case PRINT_INT: System.out.println(f.stack.pop()); break;
+            case PUSH:   f.stack.push(ins.operand); break;
+            case SCONST: f.stack.push(module.stringPool.get((int) ins.operand)); break;
+            case LOAD:   f.stack.push(f.locals.getOrDefault(ins.str, 0L)); break;
+            case STORE:  f.locals.put(ins.str, f.stack.pop()); break;
+            case IADD: { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a + b); break; }
+            case ISUB: { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a - b); break; }
+            case IMUL: { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a * b); break; }
+            case IDIV: { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a / b); break; }
+            case INEG: f.stack.push(-asLong(f.stack.pop())); break;
+            case IEQ:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a == b ? 1L : 0L); break; }
+            case INE:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a != b ? 1L : 0L); break; }
+            case ILT:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a < b ? 1L : 0L); break; }
+            case IGT:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a > b ? 1L : 0L); break; }
+            case ILE:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a <= b ? 1L : 0L); break; }
+            case IGE:  { long b = asLong(f.stack.pop()), a = asLong(f.stack.pop()); f.stack.push(a >= b ? 1L : 0L); break; }
+            case PRINT_INT: System.out.println(asLong(f.stack.pop())); break;
+            case PRINT_STR: System.out.println(asString(f.stack.pop())); break;
+            case SLEN: {
+                String s = asString(f.stack.pop());
+                f.stack.push((long) s.length());
+                break;
+            }
             case POP: f.stack.pop(); break;
             case ANEW: {
-                long size = f.stack.pop();
+                long size = asLong(f.stack.pop());
                 f.stack.push(rtNew((int) size, null));
                 break;
             }
             case AGET: {
-                long idx = f.stack.pop(), h = f.stack.pop();
+                long idx = asLong(f.stack.pop()), h = asLong(f.stack.pop());
                 f.stack.push(rtGet(h, idx));
                 break;
             }
             case ASET: {
-                long v = f.stack.pop(), idx = f.stack.pop(), h = f.stack.pop();
+                long v = asLong(f.stack.pop()), idx = asLong(f.stack.pop()), h = asLong(f.stack.pop());
                 rtSet(h, idx, v);
                 break;
             }
             case ALEN: {
-                long h = f.stack.pop();
+                long h = asLong(f.stack.pop());
                 f.stack.push(rtLen(h));
                 break;
             }
-            case RET: throw new ReturnSignal(f.stack.pop());
+            case RET: throw new ReturnSignal(asLong(f.stack.pop()));
             case CALL: {
                 int argc = (int) ins.operand;
                 long[] vals = new long[argc];
-                for (int k = argc - 1; k >= 0; k--) vals[k] = f.stack.pop();
+                for (int k = argc - 1; k >= 0; k--) vals[k] = asLong(f.stack.pop());
                 f.stack.push(callByName(ins.str, vals));
                 break;
             }
@@ -173,9 +195,9 @@ public class Vm {
                 : jit.osrCompileMain();
 
         Jit.FrameC fc = new Jit.FrameC(cf.slotCount);
-        for (Map.Entry<String, Long> e : fr.locals.entrySet()) {
+        for (Map.Entry<String, Object> e : fr.locals.entrySet()) {
             Integer s = cf.slotIndex.get(e.getKey());
-            if (s != null) fc.slots[s] = e.getValue();
+            if (s != null && e.getValue() instanceof Long) fc.slots[s] = (Long) e.getValue();
         }
         Integer header = cf.loopHeader.get(w);
         if (header == null) header = 0;
@@ -223,16 +245,19 @@ public class Vm {
     private List<long[]> gatherRoots(List<long[]> extraRoots) {
         List<long[]> blocks = new java.util.ArrayList<>();
         for (Frame fr : callStack) {
-            long[] lv = new long[fr.locals.size()];
-            int k = 0;
-            for (long v : fr.locals.values()) lv[k++] = v;
-            blocks.add(lv);
-            long[] st = new long[fr.stack.size()];
-            k = 0;
-            for (long v : fr.stack) st[k++] = v;
-            blocks.add(st);
+            blocks.add(longsOf(fr.locals.values()));
+            blocks.add(longsOf(fr.stack));
         }
         if (extraRoots != null) blocks.addAll(extraRoots);
         return blocks;
+    }
+
+    // GC 只跟踪 Long 型数组句柄；String 等对象不是堆句柄，直接忽略
+    private static long[] longsOf(java.util.Collection<Object> values) {
+        java.util.ArrayList<Long> tmp = new java.util.ArrayList<>();
+        for (Object v : values) if (v instanceof Long) tmp.add((Long) v);
+        long[] r = new long[tmp.size()];
+        for (int i = 0; i < r.length; i++) r[i] = tmp.get(i);
+        return r;
     }
 }
