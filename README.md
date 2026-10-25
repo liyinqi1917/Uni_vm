@@ -165,7 +165,7 @@ flowchart TB
 | `.rs` | `LexerRs` / `ParserRs` | `fn main()`、`let mut`、`println!` | `examples/test.rs` |
 | `.lisp` | `LexerLisp` / `ParserLisp` | S-expression、前缀运算 | `examples/test.lisp` |
 
-> `.uni` 与 `.c` 共用同一套 C 风格 Lexer/Parser；其余前端分别实现各自的词法与语法入口，最终都落到统一 AST 和字节码。
+> `.uni` 与 `.c` 共用同一套 C 风格 Lexer/Parser；其余前端分别实现各自的词法与语法入口，最终都落到统一 AST 和字节码。所有控制流前端均支持 `break` / `continue`（Lisp 写成 `(break)` / `(continue)`）。
 
 ### 后端
 
@@ -183,12 +183,15 @@ flowchart TB
 ### 运行时能力
 
 - **标量**：64 位整数
-- **字符串**：字符串常量、`print`、`len`
+- **字符串**：字符串常量、`print`、`len`、`+` 拼接、`str(int)`，支持 UTF-8 中文、Emoji 与常见转义序列
 - **数组**：`[n]` 分配、下标读写、`len(a)`、数组作为函数参数
-- **控制流**：`if/else`、`while`、比较与算术表达式
+- **控制流**：`if/else`、`while`、`break`、`continue`、比较与算术表达式
 - **函数**：参数、返回值、递归调用
+- **交互输入**：`input()` / `input(prompt)`、`toInt(string)`、`random(min, max)`（闭区间）
 - **标准库**：`time()`、`readFile(path)`、`writeFile(path, content)`
 - **运行时**：类型检查、Tier 0 解释器、Tier 1 JIT/OSR、保守追踪式 GC
+
+> `input()` 在 CLI 下从标准输入读取一行；在 GUI 下由 `JOptionPane` 弹窗读取。`toInt` 遇到非法输入返回 `0`，`random` 允许 `min > max` 并自动交换边界。
 
 ---
 
@@ -260,7 +263,8 @@ GUI 工作流：
 2. 选择前端、执行模式和类型检查开关。
 3. 选择后端与输出目录。
 4. 点击 `Run` 在 UniVM 中运行，或点击 `Generate` 生成后端产物。
-5. 选择 `WASM` 后端时，生成完成后会自动用浏览器打开配套 HTML 测试页。
+5. 程序调用 `input()` 时会弹出 `JOptionPane` 输入框，结果同步回 VM；取消弹窗等价于输入空字符串。
+6. 选择 `WASM` 后端时，生成完成后会自动用浏览器打开配套 HTML 测试页。
 
 ### 4. 使用 WebAssembly 后端
 
@@ -285,8 +289,9 @@ start out\wasm-demo.html
 
 - 浏览器不能直接执行 `.wat` 文本，因此 `--wasm` 同时生成 HTML 测试页。
 - HTML 页面通过 unpkg 加载 WABT，将 WAT 编译为 WebAssembly 后执行，首次打开需要联网。
-- 页面把 `print_int` / `print_str` / `time` / `read_file` / `write_file` 映射为宿主函数。
-- 浏览器文件读写使用页面内存中的虚拟文件系统模拟。
+- 页面把 `print_int` / `print_str` / `time` / `read_file` / `write_file` / `concat` / `str_int` / `input` / `to_int` / `random` 映射为宿主函数。
+- 浏览器文件读写使用页面内存中的虚拟文件系统模拟；`input()` 使用浏览器 `prompt` 弹窗。
+- 字符串拼接和 `str(int)` 在宿主侧分配线性内存并复制 UTF-8 字节，因此与 VM/C/C++/Go/JAR/Python 的输出一致。
 
 ---
 
@@ -375,7 +380,26 @@ java -cp out Main examples\test.uni --wasm out\demo-wasm
 | `examples/funcs.uni` | 函数、递归、调用约定 | `7 / 120 / 3628800 / 55` |
 | `examples/arrays.uni` | 数组、分配、GC | `30 / 499 / 10` |
 | `examples/string_test.uni` | 字符串、`print`、`len` | `Hello UniVM! / 12` |
+| `examples/hello_zh.uni` | 中文、转义、`+` 拼接、`str(int)` | `你好，世界！ / 数字是 42，平方是 1764` |
+| `examples/break_continue.uni` | `break` / `continue` | `1 / 3 / 5 / 7 / 循环结束` |
+| `examples/multiplication.uni` | 嵌套循环、字符串拼接、九九乘法表 | 9 行乘法表 |
+| `examples/input_test.uni` | `input`、`toInt`、`random` | 依赖交互输入 |
+| `examples/guess_number.uni` | 完整猜数字游戏 | 依赖交互输入，猜中后结束 |
 | `examples/stdlib_test.uni` | `time`、`readFile`、`writeFile` | 时间戳 + `Hello from UniVM Standard Library!` |
+
+### 交互式程序
+
+```bat
+java -cp out Main examples\input_test.uni --run
+java -cp out Main examples\guess_number.uni --run
+java -cp out Main examples\multiplication.uni --run
+```
+
+`input_test.uni` 会依次读取名字和两个整数；`guess_number.uni` 会随机生成 1–100 的目标并循环提示。也可以把输入重定向到文件，便于自动化测试：
+
+```bat
+java -cp out Main examples\input_test.uni --run < input.txt
+```
 
 JIT/OSR 基准示例位于 `examples/jit.uni` 和 `examples/osr.uni`；仓库历史记录中 Tier 1 的加速比约为 **2.47x**，OSR 约为 **1.97x**。
 
@@ -434,7 +458,7 @@ java -cp out Main examples\test.uni --run
 ```powershell
 .\release.ps1
 # 或指定版本
-.\release.ps1 -Version 1.0.1
+.\release.ps1 -Version 1.1.0
 ```
 
 脚本会：

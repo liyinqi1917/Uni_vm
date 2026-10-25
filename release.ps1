@@ -9,7 +9,7 @@
     produces a distributable zip plus a SHA-256 checksum.
 
 .PARAMETER Version
-    Release version, in major.minor.patch form. Defaults to 1.0.0.
+    Release version, in major.minor.patch form. Defaults to 1.1.0.
 
 .EXAMPLE
     .\release.ps1
@@ -19,7 +19,7 @@
 #>
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.0.0"
+    [string]$Version = "1.1.0"
 )
 
 $ErrorActionPreference = "Stop"
@@ -131,7 +131,8 @@ foreach ($doc in $docs) {
 $cliLauncher = @"
 @echo off
 setlocal
-"%~dp0runtime\bin\java.exe" -Dfile.encoding=UTF-8 -cp "%~dp0app\UniVM.jar" Main %*
+chcp 65001 >nul
+"%~dp0runtime\bin\java.exe" -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -cp "%~dp0app\UniVM.jar" Main %*
 endlocal
 "@
 $cliLauncher = $cliLauncher.Replace("`r`n", "`n").Replace("`n", "`r`n")

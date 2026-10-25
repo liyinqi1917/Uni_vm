@@ -32,3 +32,11 @@ jobs:
       - name: Smoke test CLI
         run: |
           java -cp out Main examples/test.uni --run
+          java -cp out Main examples/hello_zh.uni --run | grep -q "你好，世界！"
+          java -cp out Main examples/break_continue.uni --run | grep -q "循环结束"
+          java -cp out Main examples/multiplication.uni --run | grep -q "9×9=81"
+
+      - name: Smoke test interactive builtins
+        run: |
+          printf 'Alice\n10\n32\n' | java -cp out Main examples/input_test.uni --run | grep -q "它们的和是 42"
+          seq 1 100 | java -cp out Main examples/guess_number.uni --run | grep -q "恭喜你，猜对了！"
