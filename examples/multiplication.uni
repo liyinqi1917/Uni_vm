@@ -1,0 +1,12 @@
+// 九九乘法表：嵌套循环 + 字符串拼接 + str(int)
+let i = 1;
+while (i <= 9) {
+    let j = 1;
+    let line = "";
+    while (j <= i) {
+        line = line + str(j) + "×" + str(i) + "=" + str(j * i) + "  ";
+        j = j + 1;
+    }
+    print line;
+    i = i + 1;
+}

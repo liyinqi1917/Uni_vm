@@ -103,6 +103,10 @@ class While extends Stmt {
     }
 }
 
+// break; / continue;（只能出现在循环体内）
+class Break extends Stmt {}
+class Continue extends Stmt {}
+
 // 函数声明 func name(p0, p1, ...) body（仅顶层）
 class FuncDecl extends Stmt {
     final String name;

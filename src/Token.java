@@ -7,7 +7,8 @@ public class Token {
         LBRACKET, RBRACKET,
         EQUALS, SEMICOLON, COLON, NEWLINE, INDENT, DEDENT,
         EQ, NE, LT, GT, LE, GE,   // == != < > <= >=
-        LET, PRINT, IF, ELIF, ELSE, WHILE, FUNC, DEF, RETURN, EOF
+        LET, PRINT, IF, ELIF, ELSE, WHILE, FUNC, DEF, RETURN,
+        BREAK, CONTINUE, EOF
     }
 
     public Type type;

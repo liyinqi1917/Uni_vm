@@ -48,6 +48,16 @@ public class Parser {
         if (check(Token.Type.WHILE)) return parseWhile();
         if (check(Token.Type.FUNC))  return parseFunc();
         if (check(Token.Type.RETURN)) return parseReturn();
+        if (check(Token.Type.BREAK)) {
+            next();
+            expect(Token.Type.SEMICOLON);
+            return new Break();
+        }
+        if (check(Token.Type.CONTINUE)) {
+            next();
+            expect(Token.Type.SEMICOLON);
+            return new Continue();
+        }
         if (check(Token.Type.LBRACE)) return parseBlock();
         // 表达式语句：IDENT(...) 形式的调用
         if (check(Token.Type.IDENT) && tokens.get(pos + 1).type == Token.Type.LPAREN) {

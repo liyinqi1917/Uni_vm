@@ -1,0 +1,35 @@
+// 猜数字游戏：input / toInt / random / continue / break 的完整交互示例
+let secret = random(1, 100);
+let attempts = 0;
+let guess = 0;
+
+print "我想好了一个 1 到 100 之间的数字。";
+while (1) {
+    let text = input("请输入你的猜测（1-100）：");
+    if (len(text) == 0) {
+        print "输入结束，游戏退出。";
+        break;
+    }
+    guess = toInt(text);
+
+    if (guess < 1) {
+        print "请输入 1 到 100 之间的整数。";
+        continue;
+    }
+    if (guess > 100) {
+        print "请输入 1 到 100 之间的整数。";
+        continue;
+    }
+
+    attempts = attempts + 1;
+    if (guess < secret) {
+        print "太小了，再试一次。";
+    } else if (guess > secret) {
+        print "太大了，再试一次。";
+    } else {
+        print "恭喜你，猜对了！";
+        print "你一共猜了 " + attempts + " 次。";
+        break;
+    }
+}
+print "游戏结束。";

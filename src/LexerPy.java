@@ -150,5 +150,7 @@ public class LexerPy {
         KEYWORDS.put("def", Token.Type.DEF);
         KEYWORDS.put("return", Token.Type.RETURN);
         KEYWORDS.put("print", Token.Type.PRINT);
+        KEYWORDS.put("break", Token.Type.BREAK);
+        KEYWORDS.put("continue", Token.Type.CONTINUE);
     }
 }

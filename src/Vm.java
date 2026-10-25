@@ -1,8 +1,12 @@
+import java.io.BufferedReader;
+import java.io.InputStreamReader;
+import java.nio.charset.StandardCharsets;
 import java.util.ArrayDeque;
 import java.util.Deque;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ThreadLocalRandom;
 
 // Vm：UniVM 解释器（Tier 0 / JVM interpreter C0）
 // M4：持有 Jit；所有函数调用（解释器与编译码）统一走 callByName，
@@ -25,9 +29,22 @@ public class Vm {
         @Override public synchronized Throwable fillInStackTrace() { return this; }
     }
 
+    // break / continue 控制信号：由最内层 WhileNode 捕获
+    private static class BreakSignal extends RuntimeException {
+        @Override public synchronized Throwable fillInStackTrace() { return this; }
+    }
+    private static class ContinueSignal extends RuntimeException {
+        @Override public synchronized Throwable fillInStackTrace() { return this; }
+    }
+
     // OSR 已在 main 帧完成剩余执行
     private static class MainDoneSignal extends RuntimeException {
         @Override public synchronized Throwable fillInStackTrace() { return this; }
+    }
+
+    // CLI 使用控制台；GUI 注入 JOptionPane 弹窗实现。
+    public interface InputProvider {
+        String input(String prompt);
     }
 
     private static final int OSR_THRESHOLD = 10_000; // while 回边热点阈值
@@ -37,18 +54,28 @@ public class Vm {
     final Heap heap = new Heap();
     private static final int GC_INTERVAL = 100; // 每 100 次分配触发一次 GC
     private final Deque<Frame> callStack = new ArrayDeque<>();
+    private final InputProvider inputProvider;
+    private BufferedReader consoleIn;
 
-    private Vm(Module module, boolean jitEnabled) {
+    private Vm(Module module, boolean jitEnabled, InputProvider inputProvider) {
         this.module = module;
+        this.inputProvider = inputProvider;
         // JIT 的槽位/操作数栈是原生 long[]，无法承载 String；
-        // 含字符串常量或标准库 SYS_CALL 的模块统一走解释器，
+        // 含字符串操作或标准库 SYS_CALL 的模块统一走解释器，
         // 整数/数组模块保持原 JIT 行为。
         this.jit = new Jit(module, jitEnabled
                 && module.stringPool.isEmpty()
+                && !module.usesStrings
                 && !module.hasAnySysCall());
     }
 
-    public static Vm create(Module module, boolean jitEnabled) { return new Vm(module, jitEnabled); }
+    public static Vm create(Module module, boolean jitEnabled) {
+        return new Vm(module, jitEnabled, null);
+    }
+
+    public static Vm create(Module module, boolean jitEnabled, InputProvider inputProvider) {
+        return new Vm(module, jitEnabled, inputProvider);
+    }
 
     public Jit jit() { return jit; }
 
@@ -97,7 +124,13 @@ public class Vm {
                     exec(w.cond);
                     long c = asLong(cur().stack.pop());
                     if (c == 0) break;
-                    exec(w.body);
+                    try {
+                        exec(w.body);
+                    } catch (ContinueSignal cont) {
+                        // continue：跳过本轮剩余语句，直接进入条件判断
+                    } catch (BreakSignal brk) {
+                        break;
+                    }
                     // 回边计数 → OSR
                     int hits = fr.loopHits.merge(w, 1, Integer::sum);
                     if (jit.enabled && hits >= OSR_THRESHOLD) doOsr(fr, w);
@@ -131,6 +164,17 @@ public class Vm {
                 f.stack.push((long) s.length());
                 break;
             }
+            case SCONCAT: {
+                String b = asString(f.stack.pop());
+                String a = asString(f.stack.pop());
+                f.stack.push(a + b);
+                break;
+            }
+            case TOSTR:
+                f.stack.push(Long.toString(asLong(f.stack.pop())));
+                break;
+            case BREAK: throw new BreakSignal();
+            case CONTINUE: throw new ContinueSignal();
             case POP: f.stack.pop(); break;
             case ANEW: {
                 long size = asLong(f.stack.pop());
@@ -200,9 +244,71 @@ public class Vm {
                 break;
             }
 
+            case "input": {
+                if (argc != 1) throw new RuntimeException("input 参数个数错误: " + argc);
+                String prompt = asString(f.stack.pop());
+                f.stack.push(readInput(prompt));
+                break;
+            }
+
+            case "toInt": {
+                if (argc != 1) throw new RuntimeException("toInt 参数个数错误: " + argc);
+                f.stack.push(parseLongSafe(asString(f.stack.pop())));
+                break;
+            }
+
+            case "random": {
+                if (argc != 2) throw new RuntimeException("random 参数个数错误: " + argc);
+                long max = asLong(f.stack.pop());
+                long min = asLong(f.stack.pop());
+                f.stack.push(randomInclusive(min, max));
+                break;
+            }
+
             default:
                 throw new RuntimeException("未知标准库函数: " + ins.str);
         }
+    }
+
+    // 控制台输入：显式 UTF-8，兼容中文；GUI 通过 InputProvider 注入弹窗。
+    private String readInput(String prompt) {
+        if (inputProvider != null) {
+            String value = inputProvider.input(prompt);
+            return value == null ? "" : value;
+        }
+        if (!prompt.isEmpty()) {
+            System.out.print(prompt);
+            System.out.flush();
+        }
+        try {
+            if (consoleIn == null) {
+                consoleIn = new BufferedReader(new InputStreamReader(System.in, StandardCharsets.UTF_8));
+            }
+            String line = consoleIn.readLine();
+            return line == null ? "" : line;
+        } catch (Exception ex) {
+            return "";
+        }
+    }
+
+    // 与各后端约定一致：去除首尾空白，非法输入返回 0。
+    private static long parseLongSafe(String s) {
+        if (s == null) return 0;
+        try {
+            return Long.parseLong(s.trim());
+        } catch (NumberFormatException ex) {
+            return 0;
+        }
+    }
+
+    // 闭区间随机数；min/max 顺序可颠倒，并处理极端溢出。
+    private static long randomInclusive(long a, long b) {
+        long lo = Math.min(a, b);
+        long hi = Math.max(a, b);
+        if (lo == hi) return lo;
+        long span = hi - lo + 1;
+        if (span > 0) return lo + ThreadLocalRandom.current().nextLong(span);
+        return ThreadLocalRandom.current().nextLong();
     }
 
     // 统一调用入口（解释器 / 编译码共用）：计数 → 分层

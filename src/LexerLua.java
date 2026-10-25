@@ -76,6 +76,8 @@ public class LexerLua {
                 case "if":       return new Token(Token.Type.IF, word);
                 case "else":     return new Token(Token.Type.ELSE, word);
                 case "while":    return new Token(Token.Type.WHILE, word);
+                case "break":    return new Token(Token.Type.BREAK, word);
+                case "continue": return new Token(Token.Type.CONTINUE, word);
                 default:         return new Token(Token.Type.IDENT, word);
             }
         }

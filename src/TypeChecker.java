@@ -18,6 +18,7 @@ public class TypeChecker {
     private final Map<String, List<T>> funParams = new LinkedHashMap<>();
     private final Map<String, T> funRet = new LinkedHashMap<>();
     private final List<String> errors = new ArrayList<>();
+    private int loopDepth = 0; // 当前函数内的循环嵌套深度（break/continue 合法性）
 
     public static void check(Program p) {
         TypeChecker c = new TypeChecker();
@@ -100,13 +101,24 @@ public class TypeChecker {
         } else if (s instanceof While) {
             While w = (While) s;
             requireInt(expr(w.cond), "while 条件");
-            enter(); for (Stmt b : w.body.stmts) stmt(b); exit();
+            enter();
+            loopDepth++;
+            for (Stmt b : w.body.stmts) stmt(b);
+            loopDepth--;
+            exit();
+        } else if (s instanceof Break) {
+            if (loopDepth == 0) errors.add("break 只能出现在循环体内");
+        } else if (s instanceof Continue) {
+            if (loopDepth == 0) errors.add("continue 只能出现在循环体内");
         } else if (s instanceof FuncDecl) {
             FuncDecl f = (FuncDecl) s;
+            int savedLoopDepth = loopDepth;
+            loopDepth = 0; // break/continue 不能跨函数绑定到调用者的循环
             enter();
             for (int i = 0; i < f.params.size(); i++) declare(f.params.get(i), f.paramTypes.get(i));
             for (Stmt b : f.body.stmts) stmt(b);
             exit();
+            loopDepth = savedLoopDepth;
         } else if (s instanceof IndexSet) {
             IndexSet a = (IndexSet) s;
             T at = expr(a.array);
@@ -137,12 +149,20 @@ public class TypeChecker {
         if (e instanceof Binary) {
             Binary b = (Binary) e;
             T l = expr(b.left), r = expr(b.right);
+            // + 只要有一侧是 STRING 就执行拼接；另一侧允许 STRING 或 INT（自动转字符串）
+            if (b.op.equals("+") && (l == T.STRING || r == T.STRING)) {
+                if (l != T.STRING && l != T.INT)
+                    errors.add("字符串拼接左值必须是 STRING 或 INT，实际 " + l);
+                if (r != T.STRING && r != T.INT)
+                    errors.add("字符串拼接右值必须是 STRING 或 INT，实际 " + r);
+                return typed(e, T.STRING);
+            }
             requireInt(l, "运算左值"); requireInt(r, "运算右值");
             return typed(e, T.INT); // 算术与比较都产生 INT（比较为 0/1）
         }
         if (e instanceof Call) {
             Call c = (Call) e;
-            if (c.name.equals("time") || c.name.equals("readFile") || c.name.equals("writeFile")) {
+            if (isBuiltin(c.name)) {
                 return typed(e, builtinCall(c));
             }
             if (c.name.equals("len") && c.args.size() == 1) { // 内建 len：数组或字符串
@@ -185,7 +205,13 @@ public class TypeChecker {
         return typed(e, T.INT);
     }
 
-    // 标准库内置函数签名检查（time / readFile / writeFile）
+    private static boolean isBuiltin(String name) {
+        return name.equals("time") || name.equals("readFile") || name.equals("writeFile")
+                || name.equals("input") || name.equals("toInt") || name.equals("random")
+                || name.equals("str");
+    }
+
+    // 标准库内置函数签名检查
     private T builtinCall(Call c) {
         if (c.name.equals("time")) {
             if (c.args.size() != 0)
@@ -205,14 +231,65 @@ public class TypeChecker {
             return T.STRING;
         }
 
-        // writeFile(path, content) -> INT
-        if (c.args.size() != 2)
-            errors.add("writeFile 需要 2 个参数，实际 " + c.args.size());
-        for (int i = 0; i < c.args.size(); i++) {
-            T at = expr(c.args.get(i));
-            if (i < 2 && at != T.STRING)
-                errors.add("writeFile 第 " + (i + 1) + " 个参数需要 STRING，实际 " + at);
+        if (c.name.equals("writeFile")) {
+            if (c.args.size() != 2)
+                errors.add("writeFile 需要 2 个参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i < 2 && at != T.STRING)
+                    errors.add("writeFile 第 " + (i + 1) + " 个参数需要 STRING，实际 " + at);
+            }
+            return T.INT;
         }
+
+        // input() / input(prompt: STRING) -> STRING
+        if (c.name.equals("input")) {
+            if (c.args.size() > 1)
+                errors.add("input 最多接受 1 个提示字符串参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i == 0 && at != T.STRING)
+                    errors.add("input 的提示参数需要 STRING，实际 " + at);
+            }
+            return T.STRING;
+        }
+
+        // toInt(value: STRING) -> INT
+        if (c.name.equals("toInt")) {
+            if (c.args.size() != 1)
+                errors.add("toInt 需要 1 个参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i == 0 && at != T.STRING)
+                    errors.add("toInt 的参数需要 STRING，实际 " + at);
+            }
+            return T.INT;
+        }
+
+        // random(min: INT, max: INT) -> INT（闭区间）
+        if (c.name.equals("random")) {
+            if (c.args.size() != 2)
+                errors.add("random 需要 2 个参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i < 2 && at != T.INT)
+                    errors.add("random 第 " + (i + 1) + " 个参数需要 INT，实际 " + at);
+            }
+            return T.INT;
+        }
+
+        // str(value: INT | STRING) -> STRING
+        if (c.name.equals("str")) {
+            if (c.args.size() != 1)
+                errors.add("str 需要 1 个参数，实际 " + c.args.size());
+            for (int i = 0; i < c.args.size(); i++) {
+                T at = expr(c.args.get(i));
+                if (i == 0 && at != T.INT && at != T.STRING)
+                    errors.add("str 的参数需要 INT 或 STRING，实际 " + at);
+            }
+            return T.STRING;
+        }
+
         return T.INT;
     }
 }

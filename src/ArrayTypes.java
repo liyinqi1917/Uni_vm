@@ -53,6 +53,9 @@ public class ArrayTypes {
                     case IEQ: case INE: case ILT: case IGT: case ILE: case IGE:
                         pop(st); pop(st); st.push(0); break;
                     case PRINT_INT: case PRINT_STR: case POP: case RET: pop(st); break;
+                    case BREAK: case CONTINUE: break;
+                    case SCONCAT: pop(st); pop(st); st.push(0); break;
+                    case TOSTR: pop(st); st.push(0); break;
                     case ANEW: st.push(1); break;
                     case AGET: pop(st); pop(st); st.push(0); break;
                     case ASET: pop(st); pop(st); pop(st); break;

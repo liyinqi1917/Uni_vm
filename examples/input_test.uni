@@ -1,0 +1,8 @@
+// 交互输入 / toInt / random / 字符串拼接
+let name = input("请输入你的名字：");
+print "你好，" + name + "！";
+
+let a = toInt(input("请输入第一个整数："));
+let b = toInt(input("请输入第二个整数："));
+print "它们的和是 " + (a + b);
+print "1 到 100 的随机数是 " + random(1, 100);

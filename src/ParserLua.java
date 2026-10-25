@@ -68,6 +68,16 @@ public class ParserLua {
         if (check(Token.Type.RETURN)) return parseReturn();
         if (check(Token.Type.IF))     return parseIf();
         if (check(Token.Type.WHILE))  return parseWhile();
+        if (check(Token.Type.BREAK)) {
+            next();
+            optionalSemicolon();
+            return new Break();
+        }
+        if (check(Token.Type.CONTINUE)) {
+            next();
+            optionalSemicolon();
+            return new Continue();
+        }
 
         if (check(Token.Type.IDENT)) {
             if (at(1).type == Token.Type.EQUALS) return parseAssign();

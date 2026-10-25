@@ -67,6 +67,8 @@ public class LexerLisp {
                 case "while":  return new Token(Token.Type.WHILE, word);
                 case "defun":  return new Token(Token.Type.FUNC, word);
                 case "return": return new Token(Token.Type.RETURN, word);
+                case "break":  return new Token(Token.Type.BREAK, word);
+                case "continue": return new Token(Token.Type.CONTINUE, word);
                 default:       return new Token(Token.Type.IDENT, word);
             }
         }

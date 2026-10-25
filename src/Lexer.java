@@ -18,6 +18,15 @@ public class Lexer {
                 pos++;
             } else if (ch == '#') {
                 while (pos < input.length() && input.charAt(pos) != '\n') pos++;
+            } else if (ch == '/' && pos + 1 < input.length() && input.charAt(pos + 1) == '/') {
+                pos += 2;
+                while (pos < input.length() && input.charAt(pos) != '\n') pos++;
+            } else if (ch == '/' && pos + 1 < input.length() && input.charAt(pos + 1) == '*') {
+                int start = pos;
+                pos += 2;
+                int end = input.indexOf("*/", pos);
+                if (end < 0) throw new RuntimeException("块注释缺少 */ (位置 " + start + ")");
+                pos = end + 2;
             } else {
                 break;
             }
@@ -30,17 +39,55 @@ public class Lexer {
 
         char ch = input.charAt(pos);
 
-        // 字符串字面量："..."（读到下一个双引号）
+        // 字符串字面量："..."，支持常见反斜杠转义与 Unicode 四位转义，
+        // 双引号内的中文/Emoji 等 Unicode 字符按原样保留。
         if (ch == '"') {
             pos++;
             int start = pos;
-            while (pos < input.length() && input.charAt(pos) != '"') pos++;
-            if (pos >= input.length()) {
-                throw new RuntimeException("字符串字面量缺少结束引号 (位置 " + start + ")");
+            StringBuilder sb = new StringBuilder();
+            while (pos < input.length()) {
+                char c = input.charAt(pos++);
+                if (c == '"') {
+                    return new Token(Token.Type.STRING, sb.toString());
+                }
+                if (c != '\\') {
+                    sb.append(c);
+                    continue;
+                }
+                if (pos >= input.length()) {
+                    throw new RuntimeException("字符串转义序列不完整 (位置 " + (pos - 1) + ")");
+                }
+                char esc = input.charAt(pos++);
+                switch (esc) {
+                    case 'n':  sb.append('\n'); break;
+                    case 'r':  sb.append('\r'); break;
+                    case 't':  sb.append('\t'); break;
+                    case 'b':  sb.append('\b'); break;
+                    case 'f':  sb.append('\f'); break;
+                    case '0':  sb.append('\0'); break;
+                    case '\\': sb.append('\\'); break;
+                    case '"':  sb.append('"'); break;
+                    case '\'': sb.append('\''); break;
+                    case 'u': {
+                        if (pos + 4 > input.length()) {
+                            throw new RuntimeException("\\u 转义需要 4 位十六进制数 (位置 " + (pos - 2) + ")");
+                        }
+                        int value = 0;
+                        for (int k = 0; k < 4; k++) {
+                            int digit = Character.digit(input.charAt(pos++), 16);
+                            if (digit < 0) {
+                                throw new RuntimeException("\\u 转义包含非十六进制字符 (位置 " + (pos - 1) + ")");
+                            }
+                            value = value * 16 + digit;
+                        }
+                        sb.append((char) value);
+                        break;
+                    }
+                    default:
+                        throw new RuntimeException("未知转义序列: \\" + esc + " (位置 " + (pos - 1) + ")");
+                }
             }
-            String text = input.substring(start, pos);
-            pos++; // 跳过结束引号
-            return new Token(Token.Type.STRING, text);
+            throw new RuntimeException("字符串字面量缺少结束引号 (位置 " + start + ")");
         }
 
         // 数字
@@ -63,6 +110,8 @@ public class Lexer {
                 case "while": return new Token(Token.Type.WHILE, word);
                 case "func":  return new Token(Token.Type.FUNC, word);
                 case "return":return new Token(Token.Type.RETURN, word);
+                case "break": return new Token(Token.Type.BREAK, word);
+                case "continue": return new Token(Token.Type.CONTINUE, word);
                 default:      return new Token(Token.Type.IDENT, word);
             }
         }

@@ -164,7 +164,7 @@ public class Gui {
                 args.add("--run");
             } else if ("编译并运行".equals(outMode)) args.add("--run");
 
-            runInBackground(src, codeArea.getText(), args, outputArea);
+            runInBackground(frame, src, codeArea.getText(), args, outputArea);
         });
 
         generateBtn.addActionListener(e -> {
@@ -190,7 +190,7 @@ public class Gui {
                 case 6: args.add("--wasm"); args.add(outPath + "\\out"); break;
             }
 
-            runInBackground(src, codeArea.getText(), args, outputArea);
+            runInBackground(frame, src, codeArea.getText(), args, outputArea);
         });
 
         runBtn.addActionListener(e -> {
@@ -205,7 +205,7 @@ public class Gui {
             if (execModeBox.getSelectedIndex() == 1) args.add("--no-jit");
             if (!typeCheckBox.isSelected()) args.add("--no-check");
 
-            runInBackground(src, codeArea.getText(), args, outputArea);
+            runInBackground(frame, src, codeArea.getText(), args, outputArea);
         });
 
         JPanel top = new JPanel(new BorderLayout(5, 5));
@@ -233,8 +233,9 @@ public class Gui {
         SwingUtilities.invokeLater(() -> split.setDividerLocation(0.72));
     }
 
-    // 源码从编辑器取；写入带原后缀的临时文件后交给 Main，finally 必定删除
-    private static void runInBackground(String sourcePath, String sourceText,
+    // 源码从编辑器取；写入带原后缀的临时文件后交给 Main，finally 必定删除。
+    // input() 通过 JOptionPane 弹窗读取，结果同步回 VM。
+    private static void runInBackground(JFrame parent, String sourcePath, String sourceText,
                                         java.util.List<String> args, JTextArea outputArea) {
         outputArea.setText("");
         new Thread(() -> {
@@ -255,7 +256,7 @@ public class Gui {
                 java.util.List<String> fullArgs = new java.util.ArrayList<>();
                 fullArgs.add(temp.toString());
                 fullArgs.addAll(args);
-                Main.main(fullArgs.toArray(new String[0]));
+                Main.run(fullArgs.toArray(new String[0]), prompt -> askInput(parent, prompt));
 
                 int wasmArg = args.indexOf("--wasm");
                 if (wasmArg >= 0 && wasmArg + 1 < args.size()) {
@@ -267,7 +268,7 @@ public class Gui {
                 }
 
             } catch (Throwable t) {
-                // Main.main 的编译/解析/类型错误统一进入下方输出区
+                // Main.run 的编译/解析/类型错误统一进入下方输出区
                 t.printStackTrace();
             } finally {
                 if (temp != null) {
@@ -292,6 +293,26 @@ public class Gui {
                 SwingUtilities.invokeLater(() -> outputArea.setText(text));
             }
         }).start();
+    }
+
+    // 在 EDT 上弹出输入框；用户取消时返回空字符串，让 toInt() 得到 0。
+    private static String askInput(JFrame parent, String prompt) {
+        String message = (prompt == null || prompt.isEmpty()) ? "请输入：" : prompt;
+        final String[] answer = {""};
+        Runnable task = () -> {
+            String value = JOptionPane.showInputDialog(
+                    parent, message, "UniVM 输入", JOptionPane.QUESTION_MESSAGE);
+            answer[0] = value == null ? "" : value;
+        };
+        try {
+            if (SwingUtilities.isEventDispatchThread()) task.run();
+            else SwingUtilities.invokeAndWait(task);
+        } catch (InterruptedException ex) {
+            Thread.currentThread().interrupt();
+        } catch (Throwable ex) {
+            System.err.println("[警告] GUI 输入弹窗失败: " + ex);
+        }
+        return answer[0];
     }
 
     // WASM 生成后自动打开配套 HTML；浏览器不能直接执行 .wat。

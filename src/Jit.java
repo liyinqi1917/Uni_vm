@@ -133,6 +133,13 @@ public class Jit {
         final List<Long> imm = new ArrayList<>();
         final Map<String, Integer> slots = new LinkedHashMap<>();
         final Map<WhileNode, Integer> loopHeader = new java.util.IdentityHashMap<>();
+        final Deque<LoopCtx> loops = new ArrayDeque<>();
+
+        static class LoopCtx {
+            final int start;
+            final List<Integer> breaks = new ArrayList<>();
+            LoopCtx(int start) { this.start = start; }
+        }
 
         static CompiledFunction flatten(Function fn) {
             Flattener f = new Flattener();
@@ -191,10 +198,14 @@ public class Jit {
                     loopHeader.put(w, start); // OSR 入口：条件处 pc
                     flattenList(w.cond);
                     int jz = emit(JitOp.JZ, 0, null, 0);
+                    LoopCtx ctx = new LoopCtx(start);
+                    loops.push(ctx);
                     flattenList(w.body);
+                    loops.pop();
                     emit(JitOp.JMP, start, null, 0);
                     int endAt = op.size();
                     arg.set(jz, endAt);
+                    for (int b : ctx.breaks) arg.set(b, endAt);
                 }
             }
         }
@@ -221,6 +232,17 @@ public class Jit {
                 case AGET: emit(JitOp.AGET, 0, null, 0); break;
                 case ASET: emit(JitOp.ASET, 0, null, 0); break;
                 case ALEN: emit(JitOp.ALEN, 0, null, 0); break;
+                case BREAK: {
+                    if (loops.isEmpty()) throw new IllegalStateException("JIT: break 不在循环体内");
+                    int j = emit(JitOp.JMP, 0, null, 0);
+                    loops.peek().breaks.add(j);
+                    break;
+                }
+                case CONTINUE: {
+                    if (loops.isEmpty()) throw new IllegalStateException("JIT: continue 不在循环体内");
+                    emit(JitOp.JMP, loops.peek().start, null, 0);
+                    break;
+                }
                 case CALL: emit(JitOp.CALL, (int) i.operand, i.str, 0); break;
                 case RET:  emit(JitOp.RET, 0, null, 0); break;
                 // 标准库依赖 String/文件/时间副作用，Vm 会禁用此类模块的 JIT；
@@ -232,6 +254,8 @@ public class Jit {
                 case SCONST:
                 case PRINT_STR:
                 case SLEN:
+                case SCONCAT:
+                case TOSTR:
                     throw new UnsupportedOperationException("JIT 不支持字符串操作: " + i.op);
             }
         }

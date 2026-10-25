@@ -43,7 +43,8 @@ public class ParserLisp {
 
     private boolean isStmtHead(Token.Type t) {
         return t == Token.Type.LET || t == Token.Type.PRINT || t == Token.Type.IF
-                || t == Token.Type.WHILE || t == Token.Type.FUNC || t == Token.Type.RETURN;
+                || t == Token.Type.WHILE || t == Token.Type.FUNC || t == Token.Type.RETURN
+                || t == Token.Type.BREAK || t == Token.Type.CONTINUE;
     }
 
     public Program parseProgram() {
@@ -77,6 +78,18 @@ public class ParserLisp {
         if (head == Token.Type.WHILE)  return parseWhile();
         if (head == Token.Type.FUNC)   return parseDefun();
         if (head == Token.Type.RETURN) return parseReturn();
+        if (head == Token.Type.BREAK) {
+            expect(Token.Type.LPAREN);
+            next();
+            expect(Token.Type.RPAREN);
+            return new Break();
+        }
+        if (head == Token.Type.CONTINUE) {
+            expect(Token.Type.LPAREN);
+            next();
+            expect(Token.Type.RPAREN);
+            return new Continue();
+        }
         if (headIsIdent("set"))        return parseSet();
         if (headIsIdent("do"))         return parseDo();
 

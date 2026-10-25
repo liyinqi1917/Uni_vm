@@ -22,6 +22,11 @@ import java.util.List;
 public class Main {
 
     public static void main(String[] args) throws Exception {
+        run(args, null);
+    }
+
+    // GUI 通过该入口注入 JOptionPane 输入桥；CLI 传 null 使用控制台。
+    public static void run(String[] args, Vm.InputProvider inputProvider) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
             System.out.println("用法: java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>");
@@ -31,7 +36,7 @@ public class Main {
             return;
         }
 
-        String source = new String(Files.readAllBytes(Paths.get(args[0])));
+        String source = Files.readString(Paths.get(args[0]), StandardCharsets.UTF_8);
 
         // 前端：按扩展名选择语言（M5：多前端 → 同一 Module）
         // .c 复用 C 风格 Lexer/Parser（与 .uni 同一套大括号语法）
@@ -77,7 +82,7 @@ public class Main {
             if (a.equals("--profile")) wantProfile = true;
         }
 
-        Vm vm = Vm.create(module, jitEnabled);
+        Vm vm = Vm.create(module, jitEnabled, inputProvider);
         boolean didSomething = false;
 
         for (int i = 1; i < args.length; i++) {
@@ -100,10 +105,10 @@ public class Main {
 
                 case "--c": {
                     String out = args[++i];
-                    Files.write(Paths.get(out + ".c"), BackendC.emit(module).getBytes());
+                    Files.write(Paths.get(out + ".c"), BackendC.emit(module).getBytes(StandardCharsets.UTF_8));
                     System.out.println("已生成 C 源码: " + out + ".c");
                     try {
-                        exec("gcc", "-O2", "-o", out, out + ".c");
+                        exec("gcc", "-O2", "-finput-charset=UTF-8", "-fexec-charset=UTF-8", "-o", out, out + ".c");
                         System.out.println("已编译为 exe: " + out);
                     } catch (Exception e) {
                         System.out.println("[警告] gcc 不可用，仅生成 .c。安装 MinGW 后: gcc -O2 -o " + out + " " + out + ".c");
@@ -116,11 +121,11 @@ public class Main {
                     String base = args[++i];
                     String headerName = Paths.get(base).getFileName().toString();
                     BackendCpp.Output out = BackendCpp.emit(module, headerName);
-                    Files.write(Paths.get(base + ".h"), out.header.getBytes());
-                    Files.write(Paths.get(base + ".cpp"), out.source.getBytes());
+                    Files.write(Paths.get(base + ".h"), out.header.getBytes(StandardCharsets.UTF_8));
+                    Files.write(Paths.get(base + ".cpp"), out.source.getBytes(StandardCharsets.UTF_8));
                     System.out.println("已生成 C++: " + base + ".h / " + base + ".cpp");
                     try {
-                        exec("g++", "-O2", "-std=c++17", "-o", base, base + ".cpp");
+                        exec("g++", "-O2", "-std=c++17", "-finput-charset=UTF-8", "-fexec-charset=UTF-8", "-o", base, base + ".cpp");
                         System.out.println("已编译为 exe: " + base);
                     } catch (Exception e) {
                         System.out.println("[警告] g++ 不可用，仅生成 .h/.cpp。安装 MinGW 后: g++ -O2 -std=c++17 -o " + base + " " + base + ".cpp");
@@ -131,7 +136,7 @@ public class Main {
 
                 case "--go": {
                     String out = args[++i];
-                    Files.write(Paths.get("gen_main.go"), BackendGo.emit(module).getBytes());
+                    Files.write(Paths.get("gen_main.go"), BackendGo.emit(module).getBytes(StandardCharsets.UTF_8));
                     exec("go", "build", "-o", out, "gen_main.go");
                     System.out.println("已编译为 exe: " + out);
                     didSomething = true;
@@ -140,7 +145,7 @@ public class Main {
 
                 case "--jar": {
                     String out = args[++i];
-                    Files.write(Paths.get("Gen.java"), BackendJava.emit(module).getBytes());
+                    Files.write(Paths.get("Gen.java"), BackendJava.emit(module).getBytes(StandardCharsets.UTF_8));
                     exec("javac", "Gen.java");
                     exec("jar", "cfe", out, "Gen", "Gen.class");
                     System.out.println("已打包为 jar: " + out + "  (运行: java -jar " + out + ")");

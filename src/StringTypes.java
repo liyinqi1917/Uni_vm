@@ -55,8 +55,14 @@ public class StringTypes {
                         pop(st); pop(st); st.push(false); break;
                     case PRINT_INT: case PRINT_STR: case POP: case RET:
                         pop(st); break;
+                    case BREAK: case CONTINUE:
+                        break;
                     case SLEN:
                         pop(st); st.push(false); break;
+                    case SCONCAT:
+                        pop(st); pop(st); st.push(true); break;
+                    case TOSTR:
+                        pop(st); st.push(true); break;
                     case ANEW:
                         pop(st); st.push(false); break;
                     case AGET:
@@ -72,8 +78,8 @@ public class StringTypes {
                     }
                     case SYS_CALL: {
                         for (int k = 0; k < i.operand; k++) pop(st);
-                        // readFile 返回 STRING，time/writeFile 返回 INT
-                        st.push("readFile".equals(i.str));
+                        // readFile/input 返回 STRING，time/writeFile/toInt/random 返回 INT
+                        st.push("readFile".equals(i.str) || "input".equals(i.str));
                         break;
                     }
                 }

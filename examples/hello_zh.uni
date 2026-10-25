@@ -1,0 +1,9 @@
+// 中文源码 + 字符串拼接 + str(int)
+let name = "世界";
+print "你好，" + name + "！";
+let n = 42;
+print "数字是 " + n + "，平方是 " + (n * n);
+print str(n) + " 的十六进制是 0x2A";
+
+// 转义序列
+print "第一行\n第二行\t制表符";

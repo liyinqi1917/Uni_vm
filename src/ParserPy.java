@@ -52,6 +52,16 @@ public class ParserPy {
         if (check(Token.Type.IF)) return parseIf();
         if (check(Token.Type.WHILE)) return parseWhile();
         if (check(Token.Type.DEF)) return parseDef();
+        if (check(Token.Type.BREAK)) {
+            next();
+            expect(Token.Type.NEWLINE);
+            return new Break();
+        }
+        if (check(Token.Type.CONTINUE)) {
+            next();
+            expect(Token.Type.NEWLINE);
+            return new Continue();
+        }
 
         // 简单语句：先解析表达式，再看是否 '=' 赋值
         Expr left = parseExpr();
