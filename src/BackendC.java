@@ -40,22 +40,104 @@ public class BackendC {
 
             """;
 
+    private static final String TOSTR_HELPER = """
+            static char *uni_str_int(long long v) {
+                char *buf = (char *)malloc(32);
+                if (!buf) return (char *)"";
+                snprintf(buf, 32, "%lld", v);
+                return buf;
+            }
+
+            """;
+
+    private static final String CONCAT_HELPER = """
+            static char *uni_concat(const char *a, const char *b) {
+                if (!a) a = "";
+                if (!b) b = "";
+                size_t na = strlen(a), nb = strlen(b);
+                char *r = (char *)malloc(na + nb + 1);
+                if (!r) return (char *)"";
+                memcpy(r, a, na);
+                memcpy(r + na, b, nb + 1);
+                return r;
+            }
+
+            """;
+
+    private static final String TOINT_HELPER = """
+            static long long uni_to_int(const char *s) {
+                if (!s) return 0;
+                char *end = 0;
+                long long v = strtoll(s, &end, 10);
+                if (end == s) return 0;
+                while (*end == ' ' || *end == '\\t' || *end == '\\r' ||
+                       *end == '\\n' || *end == '\\f' || *end == '\\v') end++;
+                return *end == '\\0' ? v : 0;
+            }
+
+            """;
+
+    private static final String INPUT_HELPER = """
+            static char *uni_input(const char *prompt) {
+                if (prompt && *prompt) {
+                    fputs(prompt, stdout);
+                    fflush(stdout);
+                }
+                char buf[4096];
+                if (!fgets(buf, sizeof(buf), stdin)) return (char *)"";
+                size_t n = strlen(buf);
+                while (n > 0 && (buf[n - 1] == '\\n' || buf[n - 1] == '\\r')) buf[--n] = '\\0';
+                char *r = (char *)malloc(n + 1);
+                if (!r) return (char *)"";
+                memcpy(r, buf, n + 1);
+                return r;
+            }
+
+            """;
+
+    private static final String RANDOM_HELPER = """
+            static long long uni_random(long long a, long long b) {
+                static int seeded = 0;
+                if (!seeded) { srand((unsigned)time(0)); seeded = 1; }
+                if (a > b) { long long t = a; a = b; b = t; }
+                if (a == b) return a;
+                unsigned long long span = (unsigned long long)b - (unsigned long long)a + 1;
+                unsigned long long r = ((unsigned long long)rand() << 31)
+                                     ^ (unsigned long long)rand();
+                if (span == 0) return (long long)r;
+                return (long long)((unsigned long long)a + (r % span));
+            }
+
+            """;
+
     public static String emit(Module m) {
         boolean needRead = m.hasSysCall("readFile");
         boolean needWrite = m.hasSysCall("writeFile");
         boolean needTime = m.hasSysCall("time");
-        boolean needStdio = anyPrint(m) || needRead || needWrite;
-        boolean needAlloc = anyNode(m, Opcode.ANEW) || needRead;
-        boolean needStrlen = anyNode(m, Opcode.SLEN) || needWrite;
+        boolean needInput = m.hasSysCall("input");
+        boolean needToInt = m.hasSysCall("toInt");
+        boolean needRandom = m.hasSysCall("random");
+        boolean needConcat = anyNode(m, Opcode.SCONCAT);
+        boolean needToStr = anyNode(m, Opcode.TOSTR);
+        boolean needStdio = anyPrint(m) || needRead || needWrite || needInput || needToStr;
+        boolean needAlloc = anyNode(m, Opcode.ANEW) || needRead || needInput || needConcat || needToStr;
+        boolean needStrlen = anyNode(m, Opcode.SLEN) || needWrite || needConcat || needInput;
+        boolean needStdlib = needAlloc || needToInt || needRandom;
+        boolean needTimeHeader = needTime || needRandom;
         StringBuilder sb = new StringBuilder();
         if (needStdio) sb.append("#include <stdio.h>\n");
-        if (needAlloc) sb.append("#include <stdlib.h>\n");
+        if (needStdlib) sb.append("#include <stdlib.h>\n");
         if (needStrlen) sb.append("#include <string.h>\n");
-        if (needTime) sb.append("#include <time.h>\n");
-        if (needStdio || needAlloc || needStrlen || needTime) sb.append('\n');
+        if (needTimeHeader) sb.append("#include <time.h>\n");
+        if (needStdio || needStdlib || needStrlen || needTimeHeader) sb.append('\n');
 
         if (needRead) sb.append(READ_HELPER);
         if (needWrite) sb.append(WRITE_HELPER);
+        if (needToStr) sb.append(TOSTR_HELPER);
+        if (needConcat) sb.append(CONCAT_HELPER);
+        if (needToInt) sb.append(TOINT_HELPER);
+        if (needInput) sb.append(INPUT_HELPER);
+        if (needRandom) sb.append(RANDOM_HELPER);
 
         // 原型
         for (Function fn : m.funcs.values()) {
@@ -293,6 +375,24 @@ public class BackendC {
                         stack.push(t);
                         break;
                     }
+                    case SCONCAT: {
+                        int b = stack.pop(), a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("const char *t").append(t)
+                          .append(" = uni_concat(t").append(a).append(", t").append(b).append(");\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case TOSTR: {
+                        int a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("const char *t").append(t)
+                          .append(" = uni_str_int(t").append(a).append(");\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case BREAK: sb.append(ind).append("break;\n"); break;
+                    case CONTINUE: sb.append(ind).append("continue;\n"); break;
                     case POP: { stack.pop(); break; }
                     case ANEW: {
                         int s = stack.pop();
@@ -359,6 +459,27 @@ public class BackendC {
                             sb.append(ind).append("long long t").append(t)
                               .append(" = uni_write_file(t").append(path).append(", t")
                               .append(content).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("input")) {
+                            if (argc != 1) throw new RuntimeException("input 参数个数错误: " + argc);
+                            int prompt = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("const char *t").append(t)
+                              .append(" = uni_input(t").append(prompt).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("toInt")) {
+                            if (argc != 1) throw new RuntimeException("toInt 参数个数错误: " + argc);
+                            int s = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long long t").append(t)
+                              .append(" = uni_to_int(t").append(s).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("random")) {
+                            if (argc != 2) throw new RuntimeException("random 参数个数错误: " + argc);
+                            int hi = stack.pop(), lo = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long long t").append(t)
+                              .append(" = uni_random(t").append(lo).append(", t").append(hi).append(");\n");
                             stack.push(t);
                         } else {
                             throw new RuntimeException("未知标准库函数: " + i.str);

@@ -10,8 +10,37 @@ import java.util.Set;
 public class BackendJava {
 
     public static String emit(Module m) {
+        boolean needInput = m.hasSysCall("input");
+        boolean needToInt = m.hasSysCall("toInt");
+        boolean needRandom = m.hasSysCall("random");
         StringBuilder sb = new StringBuilder();
         sb.append("public class Gen {\n");
+        if (needInput) {
+            sb.append("    private static final java.io.BufferedReader UNI_IN =\n");
+            sb.append("        new java.io.BufferedReader(new java.io.InputStreamReader(\n");
+            sb.append("            System.in, java.nio.charset.StandardCharsets.UTF_8));\n");
+            sb.append("    private static String uni_input(String prompt) {\n");
+            sb.append("        if (prompt != null && !prompt.isEmpty()) { System.out.print(prompt); System.out.flush(); }\n");
+            sb.append("        try { String s = UNI_IN.readLine(); return s == null ? \"\" : s; }\n");
+            sb.append("        catch (Exception e) { return \"\"; }\n");
+            sb.append("    }\n");
+        }
+        if (needToInt) {
+            sb.append("    private static long uni_to_int(String s) {\n");
+            sb.append("        try { return Long.parseLong(s.trim()); }\n");
+            sb.append("        catch (Exception e) { return 0L; }\n");
+            sb.append("    }\n");
+        }
+        if (needRandom) {
+            sb.append("    private static long uni_random(long a, long b) {\n");
+            sb.append("        long lo = Math.min(a, b), hi = Math.max(a, b);\n");
+            sb.append("        if (lo == hi) return lo;\n");
+            sb.append("        long span = hi - lo + 1;\n");
+            sb.append("        if (span > 0) return lo + java.util.concurrent.ThreadLocalRandom.current().nextLong(span);\n");
+            sb.append("        return java.util.concurrent.ThreadLocalRandom.current().nextLong();\n");
+            sb.append("    }\n");
+        }
+        if (needInput || needToInt || needRandom) sb.append('\n');
 
         for (Function fn : m.funcs.values()) {
             sb.append("    static long f_").append(fn.name).append("(");
@@ -215,6 +244,24 @@ public class BackendJava {
                         stack.push(t);
                         break;
                     }
+                    case SCONCAT: {
+                        int b = stack.pop(), a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("String t").append(t)
+                          .append(" = t").append(a).append(" + t").append(b).append(";\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case TOSTR: {
+                        int a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("String t").append(t)
+                          .append(" = Long.toString(t").append(a).append(");\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case BREAK: sb.append(ind).append("break;\n"); break;
+                    case CONTINUE: sb.append(ind).append("continue;\n"); break;
                     case POP: { stack.pop(); break; }
                     case ANEW: {
                         int s = stack.pop();
@@ -288,6 +335,27 @@ public class BackendJava {
                             sb.append(ind).append("} catch (Exception e) {\n");
                             sb.append(ind).append("    t").append(t).append(" = -1L;\n");
                             sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else if (i.str.equals("input")) {
+                            if (argc != 1) throw new RuntimeException("input 参数个数错误: " + argc);
+                            int prompt = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("String t").append(t)
+                              .append(" = uni_input(t").append(prompt).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("toInt")) {
+                            if (argc != 1) throw new RuntimeException("toInt 参数个数错误: " + argc);
+                            int s = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long t").append(t)
+                              .append(" = uni_to_int(t").append(s).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("random")) {
+                            if (argc != 2) throw new RuntimeException("random 参数个数错误: " + argc);
+                            int hi = stack.pop(), lo = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("long t").append(t)
+                              .append(" = uni_random(t").append(lo).append(", t").append(hi).append(");\n");
                             stack.push(t);
                         } else {
                             throw new RuntimeException("未知标准库函数: " + i.str);

@@ -12,7 +12,9 @@ public class BackendPy {
         sb.append("# 栈式字节码 -> Python：list 作为操作数栈，dict 作为调用帧。\n\n");
         if (m.hasAnySysCall()) {
             sb.append("import time\n");
-            sb.append("import os\n\n");
+            sb.append("import os\n");
+            if (m.hasSysCall("random")) sb.append("import random\n");
+            sb.append("\n");
         }
         sb.append(RUNTIME);
 
@@ -150,6 +152,16 @@ public class BackendPy {
                 stack.append(len(stack.pop()))
 
 
+            def SCONCAT():
+                b = stack.pop()
+                a = stack.pop()
+                stack.append(a + b)
+
+
+            def TOSTR():
+                stack.append(str(stack.pop()))
+
+
             def POP():
                 stack.pop()
 
@@ -226,6 +238,30 @@ public class BackendPy {
                         stack.append(0)
                     except OSError:
                         stack.append(-1)
+                elif name == "input":
+                    if argc != 1:
+                        raise RuntimeError("input 参数个数错误: %d" % argc)
+                    prompt = stack.pop()
+                    try:
+                        stack.append(input(prompt))
+                    except EOFError:
+                        stack.append("")
+                elif name == "toInt":
+                    if argc != 1:
+                        raise RuntimeError("toInt 参数个数错误: %d" % argc)
+                    s = stack.pop()
+                    try:
+                        stack.append(int(str(s).strip()))
+                    except (TypeError, ValueError):
+                        stack.append(0)
+                elif name == "random":
+                    if argc != 2:
+                        raise RuntimeError("random 参数个数错误: %d" % argc)
+                    hi = stack.pop()
+                    lo = stack.pop()
+                    if lo > hi:
+                        lo, hi = hi, lo
+                    stack.append(random.randint(lo, hi) if lo != hi else lo)
                 else:
                     raise RuntimeError("未知标准库函数: " + name)
 
@@ -293,6 +329,10 @@ public class BackendPy {
                     case PRINT_INT: line(ind, "PRINT_INT()"); break;
                     case PRINT_STR: line(ind, "PRINT_STR()"); break;
                     case SLEN:      line(ind, "SLEN()"); break;
+                    case SCONCAT:   line(ind, "SCONCAT()"); break;
+                    case TOSTR:     line(ind, "TOSTR()"); break;
+                    case BREAK:     line(ind, "break"); break;
+                    case CONTINUE:  line(ind, "continue"); break;
                     case POP:       line(ind, "POP()"); break;
                     case ANEW:      line(ind, "ANEW()"); break;
                     case AGET:      line(ind, "AGET()"); break;

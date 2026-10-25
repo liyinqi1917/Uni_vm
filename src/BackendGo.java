@@ -9,17 +9,54 @@ import java.util.Set;
 public class BackendGo {
 
     public static String emit(Module m) {
-        boolean needFmt = anyPrint(m);
-        boolean needOS = m.hasSysCall("readFile") || m.hasSysCall("writeFile");
+        boolean needInput = m.hasSysCall("input");
+        boolean needToInt = m.hasSysCall("toInt");
+        boolean needRandom = m.hasSysCall("random");
+        boolean needToStr = anyNode(m, Opcode.TOSTR);
+        boolean needFmt = anyPrint(m) || needInput;
+        boolean needOS = m.hasSysCall("readFile") || m.hasSysCall("writeFile") || needInput;
         boolean needTime = m.hasSysCall("time");
+        boolean needBufio = needInput;
+        boolean needStrings = needInput || needToInt;
+        boolean needStrconv = needToStr || needToInt;
         StringBuilder sb = new StringBuilder();
         sb.append("package main\n\n");
-        if (needFmt || needOS || needTime) {
+        if (needFmt || needOS || needTime || needBufio || needStrings || needStrconv || needRandom) {
             sb.append("import (\n");
-            if (needFmt)  sb.append("\t\"fmt\"\n");
-            if (needOS)   sb.append("\t\"os\"\n");
-            if (needTime) sb.append("\t\"time\"\n");
+            if (needFmt)     sb.append("\t\"fmt\"\n");
+            if (needOS)      sb.append("\t\"os\"\n");
+            if (needTime)    sb.append("\t\"time\"\n");
+            if (needBufio)   sb.append("\t\"bufio\"\n");
+            if (needStrings) sb.append("\t\"strings\"\n");
+            if (needStrconv) sb.append("\t\"strconv\"\n");
+            if (needRandom)  sb.append("\t\"math/rand\"\n");
             sb.append(")\n\n");
+        }
+
+        if (needInput) {
+            sb.append("var uniStdin = bufio.NewReader(os.Stdin)\n\n");
+            sb.append("func uni_input(prompt string) string {\n");
+            sb.append("\tif prompt != \"\" { fmt.Print(prompt) }\n");
+            sb.append("\ts, err := uniStdin.ReadString('\\n')\n");
+            sb.append("\tif err != nil && len(s) == 0 { return \"\" }\n");
+            sb.append("\treturn strings.TrimRight(s, \"\\r\\n\")\n");
+            sb.append("}\n\n");
+        }
+        if (needToInt) {
+            sb.append("func uni_to_int(s string) int64 {\n");
+            sb.append("\tv, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64)\n");
+            sb.append("\tif err != nil { return 0 }\n");
+            sb.append("\treturn v\n");
+            sb.append("}\n\n");
+        }
+        if (needRandom) {
+            sb.append("func uni_random(a, b int64) int64 {\n");
+            sb.append("\tif a > b { a, b = b, a }\n");
+            sb.append("\tif a == b { return a }\n");
+            sb.append("\tspan := b - a + 1\n");
+            sb.append("\tif span <= 0 { return rand.Int63() }\n");
+            sb.append("\treturn a + rand.Int63n(span)\n");
+            sb.append("}\n\n");
         }
 
         for (Function fn : m.funcs.values()) {
@@ -43,6 +80,26 @@ public class BackendGo {
         mainE.block(m.main, "\t");
         sb.append("}\n");
         return sb.toString();
+    }
+
+    private static boolean anyNode(Module m, Opcode target) {
+        for (Function fn : m.funcs.values()) if (hasNode(fn.body, target)) return true;
+        return hasNode(m.main, target);
+    }
+
+    private static boolean hasNode(List<BytecodeNode> ns, Opcode target) {
+        for (BytecodeNode n : ns) {
+            if (n instanceof Instruction && ((Instruction) n).op == target) return true;
+            if (n instanceof IfNode) {
+                IfNode f = (IfNode) n;
+                if (hasNode(f.cond, target) || hasNode(f.then, target) || hasNode(f.els, target)) return true;
+            }
+            if (n instanceof WhileNode) {
+                WhileNode w = (WhileNode) n;
+                if (hasNode(w.cond, target) || hasNode(w.body, target)) return true;
+            }
+        }
+        return false;
     }
 
     private static boolean anyPrint(Module m) {
@@ -242,6 +299,24 @@ public class BackendGo {
                         stack.push(t);
                         break;
                     }
+                    case SCONCAT: {
+                        int b = stack.pop(), a = stack.pop();
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t)
+                          .append(" := t").append(a).append(" + t").append(b).append("\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case TOSTR: {
+                        int a = stack.pop();
+                        int t = tempCounter++;
+                        sb.append(ind).append("t").append(t)
+                          .append(" := strconv.FormatInt(t").append(a).append(", 10)\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case BREAK: sb.append(ind).append("break\n"); break;
+                    case CONTINUE: sb.append(ind).append("continue\n"); break;
                     case POP: {
                         int a = stack.pop();
                         sb.append(ind).append("_ = t").append(a).append("\n");
@@ -319,6 +394,27 @@ public class BackendGo {
                             sb.append(ind).append("if t").append(err).append(" != nil {\n");
                             sb.append(ind).append("\tt").append(t).append(" = -1\n");
                             sb.append(ind).append("}\n");
+                            stack.push(t);
+                        } else if (i.str.equals("input")) {
+                            if (argc != 1) throw new RuntimeException("input 参数个数错误: " + argc);
+                            int prompt = stack.pop();
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(t)
+                              .append(" := uni_input(t").append(prompt).append(")\n");
+                            stack.push(t);
+                        } else if (i.str.equals("toInt")) {
+                            if (argc != 1) throw new RuntimeException("toInt 参数个数错误: " + argc);
+                            int s = stack.pop();
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(t)
+                              .append(" := uni_to_int(t").append(s).append(")\n");
+                            stack.push(t);
+                        } else if (i.str.equals("random")) {
+                            if (argc != 2) throw new RuntimeException("random 参数个数错误: " + argc);
+                            int hi = stack.pop(), lo = stack.pop();
+                            int t = tempCounter++;
+                            sb.append(ind).append("t").append(t)
+                              .append(" := uni_random(t").append(lo).append(", t").append(hi).append(")\n");
                             stack.push(t);
                         } else {
                             throw new RuntimeException("未知标准库函数: " + i.str);

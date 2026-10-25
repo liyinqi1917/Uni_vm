@@ -33,6 +33,59 @@ public class BackendCpp {
 
             """;
 
+    private static final String TOSTR_HELPER = """
+            static std::string uni_str_int(std::int64_t v) {
+                return std::to_string(v);
+            }
+
+            """;
+
+    private static final String INPUT_HELPER = """
+            static std::string uni_input(const std::string &prompt) {
+                if (!prompt.empty()) {
+                    std::cout << prompt;
+                    std::cout.flush();
+                }
+                std::string line;
+                if (!std::getline(std::cin, line)) return "";
+                if (!line.empty() && line.back() == '\\r') line.pop_back();
+                return line;
+            }
+
+            """;
+
+    private static final String TOINT_HELPER = """
+            static std::int64_t uni_to_int(const std::string &s) {
+                try {
+                    std::size_t pos = 0;
+                    long long v = std::stoll(s, &pos, 10);
+                    if (pos == 0) return 0;
+                    while (pos < s.size() && (s[pos] == ' ' || s[pos] == '\\t' ||
+                           s[pos] == '\\r' || s[pos] == '\\n' || s[pos] == '\\f' ||
+                           s[pos] == '\\v')) pos++;
+                    return pos == s.size() ? (std::int64_t)v : 0;
+                } catch (...) {
+                    return 0;
+                }
+            }
+
+            """;
+
+    private static final String RANDOM_HELPER = """
+            static std::int64_t uni_random(std::int64_t a, std::int64_t b) {
+                static bool seeded = false;
+                if (!seeded) { std::srand((unsigned)std::time(nullptr)); seeded = true; }
+                if (a > b) std::swap(a, b);
+                if (a == b) return a;
+                unsigned long long span = (unsigned long long)b - (unsigned long long)a + 1;
+                unsigned long long r = ((unsigned long long)std::rand() << 31)
+                                     ^ (unsigned long long)std::rand();
+                if (span == 0) return (std::int64_t)r;
+                return (std::int64_t)((unsigned long long)a + (r % span));
+            }
+
+            """;
+
     public static class Output {
         public final String header, source;
         Output(String header, String source) { this.header = header; this.source = source; }
@@ -44,7 +97,17 @@ public class BackendCpp {
         boolean needRead = m.hasSysCall("readFile");
         boolean needWrite = m.hasSysCall("writeFile");
         boolean needTime = m.hasSysCall("time");
-        boolean needString = anyNode(m, Opcode.SCONST) || needRead || needWrite;
+        boolean needInput = m.hasSysCall("input");
+        boolean needToInt = m.hasSysCall("toInt");
+        boolean needRandom = m.hasSysCall("random");
+        boolean needConcat = anyNode(m, Opcode.SCONCAT);
+        boolean needToStr = anyNode(m, Opcode.TOSTR);
+        boolean needString = anyNode(m, Opcode.SCONST) || needRead || needWrite
+                || needInput || needConcat || needToStr || needToInt;
+        boolean needIostream = needInput;
+        boolean needCstdlib = needRandom;
+        boolean needCtime = needTime || needRandom;
+        boolean needUtility = needRandom;
 
         // ===== 头文件 =====
         StringBuilder h = new StringBuilder();
@@ -68,13 +131,20 @@ public class BackendCpp {
         if (needStdio) sb.append("#include <cstdio>\n");
         if (needVector) sb.append("#include <vector>\n");
         if (needString) sb.append("#include <string>\n");
+        if (needIostream) sb.append("#include <iostream>\n");
         if (needRead || needWrite) sb.append("#include <fstream>\n");
         if (needRead) sb.append("#include <sstream>\n");
-        if (needTime) sb.append("#include <ctime>\n");
+        if (needCtime) sb.append("#include <ctime>\n");
+        if (needCstdlib) sb.append("#include <cstdlib>\n");
+        if (needUtility) sb.append("#include <utility>\n");
         sb.append('\n');
 
         if (needRead) sb.append(READ_HELPER);
         if (needWrite) sb.append(WRITE_HELPER);
+        if (needToStr) sb.append(TOSTR_HELPER);
+        if (needInput) sb.append(INPUT_HELPER);
+        if (needToInt) sb.append(TOINT_HELPER);
+        if (needRandom) sb.append(RANDOM_HELPER);
 
         for (Function fn : m.funcs.values()) {
             sb.append("std::int64_t f_").append(fn.name).append("(");
@@ -313,6 +383,24 @@ public class BackendCpp {
                         stack.push(t);
                         break;
                     }
+                    case SCONCAT: {
+                        int b = stack.pop(), a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("std::string t").append(t)
+                          .append(" = t").append(a).append(" + t").append(b).append(";\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case TOSTR: {
+                        int a = stack.pop();
+                        int t = newTemp(false);
+                        sb.append(ind).append("std::string t").append(t)
+                          .append(" = uni_str_int(t").append(a).append(");\n");
+                        stack.push(t);
+                        break;
+                    }
+                    case BREAK: sb.append(ind).append("break;\n"); break;
+                    case CONTINUE: sb.append(ind).append("continue;\n"); break;
                     case POP: { stack.pop(); break; }
                     case ANEW: {
                         int s = stack.pop();
@@ -375,6 +463,27 @@ public class BackendCpp {
                             sb.append(ind).append("std::int64_t t").append(t)
                               .append(" = uni_write_file(t").append(path).append(", t")
                               .append(content).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("input")) {
+                            if (argc != 1) throw new RuntimeException("input 参数个数错误: " + argc);
+                            int prompt = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::string t").append(t)
+                              .append(" = uni_input(t").append(prompt).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("toInt")) {
+                            if (argc != 1) throw new RuntimeException("toInt 参数个数错误: " + argc);
+                            int s = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = uni_to_int(t").append(s).append(");\n");
+                            stack.push(t);
+                        } else if (i.str.equals("random")) {
+                            if (argc != 2) throw new RuntimeException("random 参数个数错误: " + argc);
+                            int hi = stack.pop(), lo = stack.pop();
+                            int t = newTemp(false);
+                            sb.append(ind).append("std::int64_t t").append(t)
+                              .append(" = uni_random(t").append(lo).append(", t").append(hi).append(");\n");
                             stack.push(t);
                         } else {
                             throw new RuntimeException("未知标准库函数: " + i.str);
