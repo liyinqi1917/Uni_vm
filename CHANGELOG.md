@@ -3,6 +3,32 @@
 所有值得记录的改动都会写在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
+## [1.2.0] - 2026-10-25
+
+### Added
+- 现代化 IDE 壳：`JMenuBar`（文件 / 编辑 / 运行 / 帮助）、图标工具栏、实时底部状态栏
+- `JTabbedPane` 多文件标签页，支持新建、打开、保存、另存为、全部保存与关闭
+- 左侧工作区文件树：懒加载目录、双击打开文件、刷新、右键菜单
+- `EditorPane`：`JTextPane`、行号、等宽字体、语法高亮、撤销/重做、智能缩进
+- `Ctrl+B` 编译检查 / `Ctrl+G` 生成后端 / `F5` 运行 / `Shift+F5` 停止 / `Ctrl+Shift+F` 格式化
+- 块注释折叠与展开（`Ctrl+Alt+C` / `Ctrl+Alt+U`），折叠状态不会污染编译与运行源码
+- `Vm.StopToken`、`VmStoppedException` 与解释器/JIT 检查点，支持安全中断死循环
+- `CodeFormatter`：`.uni` / `.py` / `.lisp` 缩进格式化
+- `Icons` 矢量图标、`FileTreePanel`、`EditorPane` 等独立组件
+- 单文件 Windows 安装器 `dist/UniVM-1.2.0-Setup.exe`
+
+### Changed
+- `Gui` 从单编辑框升级为完整 IDE 工作流：文件树、标签页、编辑器、控制台、状态栏
+- 控制台改用支持中文的字体，中文输出不再显示为方块
+- 编译、生成、运行使用独立完成状态：`编译成功` / `生成成功` / `运行成功`
+- `release.ps1`、`installer_build.ps1` 与安装器默认版本更新为 `1.2.0`
+
+### Fixed
+- 文件树渲染器在组件字体尚未初始化时的空指针异常
+- 控制台中文输出因等宽字体缺少 CJK 字形而显示为方块
+- 运行中的无限循环无法从 GUI 停止的问题
+- 折叠注释后编辑器文本与编译源码不一致的问题
+
 ## [1.1.1] - 2026-10-25
 
 ### Added

@@ -64,7 +64,7 @@ try {
     }
 
     $zipPath = $zips[0].FullName
-    $version = '1.1.1'
+    $version = '1.2.0'
     if ($zips[0].Name -match '^UniVM-(.+)-windows-x64\.zip$') {
         $version = $Matches[1]
     }

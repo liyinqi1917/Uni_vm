@@ -9,7 +9,7 @@
     produces a distributable zip plus a SHA-256 checksum.
 
 .PARAMETER Version
-    Release version, in major.minor.patch form. Defaults to 1.1.1.
+    Release version, in major.minor.patch form. Defaults to 1.2.0.
 
 .EXAMPLE
     .\release.ps1
@@ -19,7 +19,7 @@
 #>
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.1.1"
+    [string]$Version = "1.2.0"
 )
 
 $ErrorActionPreference = "Stop"

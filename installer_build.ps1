@@ -14,7 +14,7 @@
     creates a desktop shortcut, and shows a completion message.
 
 .PARAMETER Version
-    Release version, in major.minor.patch form. Defaults to 1.1.1.
+    Release version, in major.minor.patch form. Defaults to 1.2.0.
 
 .PARAMETER SkipRelease
     Reuse an existing dist\UniVM-<version>-windows-x64.zip instead of
@@ -25,7 +25,7 @@
 #>
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.1.1",
+    [string]$Version = "1.2.0",
 
     [switch]$SkipRelease,
 

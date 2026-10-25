@@ -40,7 +40,9 @@ UniVM 面向语言实现、编译原理和运行时工程的学习与研究，�
 - **6 种后端**：C、C++、Go、JAR、Python、WebAssembly
 - **分层执行**：Tier 0 帧式解释器 + Tier 1 热点编译 + OSR 栈上替换
 - **统一运行时**：类型检查、数组、字符串、标准库、保守追踪式 GC
-- **双入口工具链**：命令行 `Main` + Swing 图形界面 `Gui`
+- **双入口工具链**：命令行 `Main` + 现代化 Swing IDE `Gui`
+- **IDE 级编辑体验**：多文件标签、工作区文件树、行号、语法高亮、注释折叠、格式化与实时状态栏
+- **可中断执行**：运行中可按 `Shift+F5` 中断解释器/JIT，避免死循环锁死界面
 - **WebAssembly 链路**：生成 `.wat` 与可直接在浏览器打开的 HTML 测试页
 
 项目不追求“所有语言特性一次性完备”，而是强调**结构清晰、可验证、可扩展**：每一层都有独立职责，每一个后端都能用同一组示例进行输出一致性验证。
@@ -221,7 +223,7 @@ flowchart TB
 如果只想直接使用 UniVM，运行：
 
 ```text
-dist\UniVM-1.1.1-Setup.exe
+dist\UniVM-1.2.0-Setup.exe
 ```
 
 1. 双击 `Setup.exe` 启动安装。
@@ -282,14 +284,29 @@ java -cp out Main examples\py_demo.py --profile
 java -cp out Gui
 ```
 
-GUI 工作流：
+GUI 是一个完整的多文件 IDE：
 
-1. 选择源文件，或直接在代码编辑器中编辑。
-2. 选择前端、执行模式和类型检查开关。
-3. 选择后端与输出目录。
-4. 点击 `Run` 在 UniVM 中运行，或点击 `Generate` 生成后端产物。
-5. 程序调用 `input()` 时会弹出 `JOptionPane` 输入框，结果同步回 VM；取消弹窗等价于输入空字符串。
-6. 选择 `WASM` 后端时，生成完成后会自动用浏览器打开配套 HTML 测试页。
+- 左侧为工作区文件树，双击文件即可在右侧标签页打开；支持新建、打开、保存、另存为、全部保存和关闭标签。
+- 顶部配置栏可选择前端、执行模式、类型检查、后端和输出目录。
+- 菜单栏包含 `文件` / `编辑` / `运行` / `帮助`，工具栏提供常用操作图标，底部状态栏实时显示光标位置、编码与执行状态。
+- 编辑器带行号、等宽字体、语法高亮、撤销/重做、智能缩进和块注释折叠。
+- `Configure` 执行编译检查并输出字节码，`Generate` 生成所选后端产物，`Run` 在 UniVM 中执行，`Stop` 可中断死循环。
+- 程序调用 `input()` 时会弹出 `JOptionPane` 输入框，结果同步回 VM；取消弹窗等价于输入空字符串。
+- 选择 `WASM` 后端时，生成完成后会自动用浏览器打开配套 HTML 测试页。
+
+常用快捷键：
+
+| 操作 | 快捷键 |
+| --- | --- |
+| 新建 / 打开 / 保存 / 另存为 | `Ctrl+N` / `Ctrl+O` / `Ctrl+S` / `Ctrl+Shift+S` |
+| 全部保存 / 关闭当前标签 | `Ctrl+Alt+S` / `Ctrl+W` |
+| 编译检查（Configure） | `Ctrl+B` |
+| 生成后端（Generate） | `Ctrl+G` |
+| 运行 / 停止 | `F5` / `Shift+F5` |
+| 格式化代码 | `Ctrl+Shift+F` |
+| 折叠 / 展开注释 | `Ctrl+Alt+C` / `Ctrl+Alt+U` |
+| 性能分析运行 | `Ctrl+Shift+P` |
+| 快捷键一览 | `F1` |
 
 ### 4. 使用 WebAssembly 后端
 
@@ -436,7 +453,11 @@ JIT/OSR 基准示例位于 `examples/jit.uni` 和 `examples/osr.uni`；仓库历
 UniVM/
 ├─ src/
 │  ├─ Main.java                 # CLI 入口
-│  ├─ Gui.java                  # Swing GUI
+│  ├─ Gui.java                  # IDE 主窗口：菜单、工具栏、标签、执行控制
+│  ├─ EditorPane.java           # 行号、语法高亮、撤销、折叠、格式化
+│  ├─ FileTreePanel.java        # 工作区文件树
+│  ├─ CodeFormatter.java        # .uni / .py / .lisp 缩进格式化
+│  ├─ Icons.java                # 矢量图标与应用图标
 │  ├─ Lexer.java / Parser.java  # .uni / .c 前端
 │  ├─ LexerPy.java ...          # Python / Lua / Rust / Lisp 前端
 │  ├─ Ast.java
@@ -486,7 +507,7 @@ java -cp out Main examples\test.uni --run
 ```powershell
 .\release.ps1
 # 或指定版本
-.\release.ps1 -Version 1.1.1
+.\release.ps1 -Version 1.2.0
 ```
 
 脚本会：
@@ -550,6 +571,7 @@ dist/UniVM-<version>-Setup.exe.sha256
 - [x] VM + Tier 1 JIT + OSR
 - [x] C / C++ / Go / JAR / Python / WebAssembly 后端
 - [x] GUI 与 WASM 浏览器测试页
+- [x] 现代 IDE：标签页、文件树、语法高亮、折叠、格式化、可中断执行
 - [x] GitHub Actions 编译 CI
 - [ ] 更完整的对象/类模型与精确 GC
 - [ ] 更丰富的标准库与跨语言 FFI
