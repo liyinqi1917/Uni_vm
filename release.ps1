@@ -131,7 +131,7 @@ foreach ($doc in $docs) {
 $cliLauncher = @"
 @echo off
 setlocal
-chcp 65001 >nul
+chcp 65001 >nul <nul
 "%~dp0runtime\bin\java.exe" -Dfile.encoding=UTF-8 -Dstdout.encoding=UTF-8 -Dstderr.encoding=UTF-8 -cp "%~dp0app\UniVM.jar" Main %*
 endlocal
 "@
