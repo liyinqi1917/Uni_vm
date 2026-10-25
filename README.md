@@ -216,6 +216,23 @@ flowchart TB
 
 以下命令以 Windows CMD / PowerShell 为例。Unix 环境下将路径分隔符 `\` 改为 `/`。
 
+### Windows 安装包（推荐）
+
+如果只想直接使用 UniVM，运行：
+
+```text
+dist\UniVM-1.1.1-Setup.exe
+```
+
+1. 双击 `Setup.exe` 启动安装。
+2. 安装器会把完整运行时放到 `%LOCALAPPDATA%\UniVM`，无需管理员权限。
+3. 自动创建桌面快捷方式 `UniVM` 和开始菜单项。
+4. 安装完成后会弹出提示；双击桌面上的 `UniVM` 图标即可打开 GUI。
+
+> 安装包未做代码签名。若 SmartScreen 提示“Windows 已保护你的电脑”，点击“更多信息” → “仍要运行”。
+>
+> 卸载：先关闭 UniVM，删除 `%LOCALAPPDATA%\UniVM`，再删除桌面和开始菜单中的 `UniVM` 快捷方式。
+
 ### 1. 一键构建
 
 ```bat
@@ -436,6 +453,8 @@ UniVM/
 ├─ build.bat                    # 编译并运行示例
 ├─ package.ps1                  # 本地 jpackage 打包
 ├─ release.ps1                  # 发布 zip + SHA256
+├─ installer/                   # Setup.exe 安装脚本与启动器
+├─ installer_build.ps1          # 构建 dist\UniVM-<version>-Setup.exe
 └─ .github/workflows/build.yml  # GitHub Actions CI
 ```
 
@@ -497,6 +516,30 @@ UniVM/
 ```
 
 要求：Windows x64 + JDK 21（含 `jpackage`）。发布目录 `dist/` 已被 `.gitignore` 忽略，不会污染仓库。
+
+### 构建 Windows 安装包
+
+`installer_build.ps1` 会先调用 `release.ps1`，再把发布 zip 打包为单文件安装器：
+
+```powershell
+.\installer_build.ps1
+# 复用已有发布 zip，加快迭代
+.\installer_build.ps1 -SkipRelease
+```
+
+脚本会检查 `candle.exe` / `light.exe`：
+
+- 检测到 WiX Toolset 时，优先尝试 `jpackage --type exe` 原生安装包；
+- 未检测到 WiX，或 jpackage 失败时，自动降级到 Windows 自带的 IExpress 自解压安装器。
+
+产物：
+
+```text
+dist/UniVM-<version>-Setup.exe
+dist/UniVM-<version>-Setup.exe.sha256
+```
+
+构建要求：Windows PowerShell 5.1+、.NET Framework 4.x（`csc.exe`）；IExpress 是 Windows 自带组件，无需额外安装 WiX。
 
 ---
 

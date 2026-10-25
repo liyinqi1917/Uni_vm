@@ -12,6 +12,8 @@
 - `cout << ... << endl;` 降级为打印，`cin >> ...` 降级为 `input()` / `toInt()`
 - `examples/test_cpp.cpp`，并验证 VM 与生成的原生 C++ 输出一致
 - `StmtSeq` AST 节点，用于 C++ 多变量声明、`cin` 链和无作用域语句序列
+- 单文件 Windows 安装器 `dist/UniVM-1.1.1-Setup.exe`：安装到 `%LOCALAPPDATA%\UniVM`，创建桌面/开始菜单快捷方式并显示完成提示
+- `installer_build.ps1` 与 `installer/`：检测到 WiX 时优先尝试 `jpackage --type exe`，否则自动降级到 IExpress 自解压安装器
 
 ### Changed
 - `Main` 按扩展名分发 C++ 源码到 `LexerCpp` / `ParserCpp`
