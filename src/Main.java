@@ -15,7 +15,7 @@ import java.util.List;
 //                                         |-> BackendWasm-> .wat + HTML 浏览器测试页
 //
 // 用法:
-//   java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>
+//   java Main <input.uni|input.py|input.c|input.cpp|input.lua|input.rs|input.lisp>
 //                         [--run] [--ir] [--profile] [--no-jit]
 //                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]
 //                         [--wasm out]
@@ -29,7 +29,7 @@ public class Main {
     public static void run(String[] args, Vm.InputProvider inputProvider) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
-            System.out.println("用法: java Main <input.uni|input.py|input.c|input.lua|input.rs|input.lisp>");
+            System.out.println("用法: java Main <input.uni|input.py|input.c|input.cpp|input.lua|input.rs|input.lisp>");
             System.out.println("                         [--run] [--ir] [--profile] [--no-jit]");
             System.out.println("                         [--c out] [--cpp base] [--go out.exe] [--jar out.jar] [--py out]");
             System.out.println("                         [--wasm out]");
@@ -43,6 +43,7 @@ public class Main {
         String lowerName = args[0].toLowerCase();
         boolean isPython = lowerName.endsWith(".py");
         boolean isC      = lowerName.endsWith(".c");
+        boolean isCpp    = lowerName.endsWith(".cpp") || lowerName.endsWith(".cc") || lowerName.endsWith(".cxx");
         boolean isLua    = lowerName.endsWith(".lua");
         boolean isRust   = lowerName.endsWith(".rs");
         boolean isLisp   = lowerName.endsWith(".lisp");
@@ -50,6 +51,9 @@ public class Main {
         if (isPython) {
             List<Token> pyTokens = new LexerPy(source).scanAllTokens();
             prog = new ParserPy(pyTokens).parseProgram();
+        } else if (isCpp) {
+            List<Token> cppTokens = new LexerCpp(source).scanAllTokens();
+            prog = new ParserCpp(cppTokens).parseProgram();
         } else if (isC) {
             List<Token> cTokens = new Lexer(source).scanAllTokens();
             prog = new Parser(cTokens).parseProgram();

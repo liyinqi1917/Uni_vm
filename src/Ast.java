@@ -80,6 +80,11 @@ class Block extends Stmt {
     final List<Stmt> stmts = new ArrayList<>();
 }
 
+// 无作用域的语句序列：用于 C++ 多变量声明、cin 链等语法降级
+class StmtSeq extends Stmt {
+    final List<Stmt> stmts = new ArrayList<>();
+}
+
 // if (cond) thenBlock [else els]
 // els 为 Block 或 If（else if 链），无 else 时为 null
 class If extends Stmt {

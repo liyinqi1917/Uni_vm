@@ -32,6 +32,7 @@ jobs:
       - name: Smoke test CLI
         run: |
           java -cp out Main examples/test.uni --run
+          java -cp out Main examples/test_cpp.cpp --run | grep -q "Hello C++!"
           java -cp out Main examples/hello_zh.uni --run | grep -q "你好，世界！"
           java -cp out Main examples/break_continue.uni --run | grep -q "循环结束"
           java -cp out Main examples/multiplication.uni --run | grep -q "9×9=81"

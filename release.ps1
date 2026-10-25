@@ -1,4 +1,4 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
     Build a self-contained Windows x64 release package for UniVM.
@@ -9,7 +9,7 @@
     produces a distributable zip plus a SHA-256 checksum.
 
 .PARAMETER Version
-    Release version, in major.minor.patch form. Defaults to 1.1.0.
+    Release version, in major.minor.patch form. Defaults to 1.1.1.
 
 .EXAMPLE
     .\release.ps1
@@ -19,7 +19,7 @@
 #>
 param(
     [ValidatePattern('^\d+\.\d+\.\d+$')]
-    [string]$Version = "1.1.0"
+    [string]$Version = "1.1.1"
 )
 
 $ErrorActionPreference = "Stop"
@@ -61,8 +61,11 @@ $zipPath    = Join-Path $distDir "UniVM-$Version-windows-x64.zip"
 $hashPath   = "$zipPath.sha256"
 
 Write-Step "[1/6] Preparing dist/"
-if (Test-Path $distDir) {
-    Remove-Item -Recurse -Force $distDir
+New-Item -ItemType Directory -Force -Path $distDir | Out-Null
+foreach ($stale in @($buildDir, $appImage, $zipPath, $hashPath)) {
+    if (Test-Path $stale) {
+        Remove-Item -Recurse -Force $stale
+    }
 }
 New-Item -ItemType Directory -Force -Path $classesDir | Out-Null
 New-Item -ItemType Directory -Force -Path $inputDir | Out-Null
@@ -151,6 +154,7 @@ Start the GUI:
 
 Run the command-line compiler with the bundled Java runtime:
   univm-cli.bat examples\test.uni --run
+  univm-cli.bat examples\test_cpp.cpp --run
 
 Package contents:
   UniVM.exe        GUI launcher (bundled runtime)
@@ -188,8 +192,10 @@ $hashLine = "$hash  $(Split-Path -Leaf $zipPath)`r`n"
 Remove-Item -Recurse -Force $buildDir
 
 $sizeMb = (Get-Item $zipPath).Length / 1MB
+$zipRelative = "dist\$([System.IO.Path]::GetFileName($zipPath))"
 Write-Host ""
-Write-Host "Release created: $zipPath"
-Write-Host ("Size: {0:N1} MB" -f $sizeMb)
-Write-Host "SHA-256: $hashPath"
-Write-Host "App image: $appImage"
+Write-Host "打包完成！文件位于 $zipRelative，你可以直接把这个文件发给别人。"
+Write-Host ("大小: {0:N1} MB" -f $sizeMb)
+Write-Host "SHA-256 文件: $hashPath"
+Write-Host "SHA-256: $hash"
+Write-Host "解压后的程序目录: $appImage"

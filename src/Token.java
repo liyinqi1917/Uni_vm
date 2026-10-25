@@ -7,7 +7,10 @@ public class Token {
         LBRACKET, RBRACKET,
         EQUALS, SEMICOLON, COLON, NEWLINE, INDENT, DEDENT,
         EQ, NE, LT, GT, LE, GE,   // == != < > <= >=
-        LET, PRINT, IF, ELIF, ELSE, WHILE, FUNC, DEF, RETURN,
+        SHL, SHR, SCOPE, INC, DEC, // << >> :: ++ --
+        PLUSEQ, MINUSEQ, MULEQ, DIVEQ, // += -= *= /=
+        NOT, ANDAND, OROR,        // ! && ||
+        LET, PRINT, IF, ELIF, ELSE, WHILE, FOR, FUNC, DEF, RETURN,
         BREAK, CONTINUE, EOF
     }
 

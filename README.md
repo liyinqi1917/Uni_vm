@@ -1,11 +1,11 @@
 # UniVM
 
 **通用字节码多目标编译器**<br>
-*One bytecode. Six language frontends. Six backends. One runtime.*
+*One bytecode. Seven language frontends. Six backends. One runtime.*
 
 [![Build](https://github.com/liyinqi1917/Uni_vm/actions/workflows/build.yml/badge.svg?branch=main)](https://github.com/liyinqi1917/Uni_vm/actions/workflows/build.yml)
 [![Java](https://img.shields.io/badge/Java-21-007396?logo=openjdk&logoColor=white)](https://adoptium.net/)
-[![Frontends](https://img.shields.io/badge/frontends-6-0ea5e9)](#支持矩阵)
+[![Frontends](https://img.shields.io/badge/frontends-7-0ea5e9)](#支持矩阵)
 [![Backends](https://img.shields.io/badge/backends-6-16a34a)](#支持矩阵)
 
 UniVM 是一个以 JVM / GraalVM 为架构参照的通用字节码多目标编译器。它将多种语言风格的源码统一编译到同一套栈式字节码，再由解释器/JIT 执行，或生成 C、C++、Go、JAR、Python、WebAssembly 等目标产物。
@@ -36,7 +36,7 @@ UniVM 是一个以 JVM / GraalVM 为架构参照的通用字节码多目标编�
 
 UniVM 面向语言实现、编译原理和运行时工程的学习与研究，同时保持完整的端到端工具链：
 
-- **6 种语言前端**：`.uni`、`.py`、`.c`、`.lua`、`.rs`、`.lisp`
+- **7 种语言前端**：`.uni`、`.py`、`.c`、`.cpp`、`.lua`、`.rs`、`.lisp`
 - **6 种后端**：C、C++、Go、JAR、Python、WebAssembly
 - **分层执行**：Tier 0 帧式解释器 + Tier 1 热点编译 + OSR 栈上替换
 - **统一运行时**：类型检查、数组、字符串、标准库、保守追踪式 GC
@@ -67,16 +67,19 @@ UniVM 面向语言实现、编译原理和运行时工程的学习与研究，�
 flowchart TB
     subgraph FE["多语言前端"]
         FE_UNI[".uni / .c<br/>C 风格语法"]
+        FE_CPP[".cpp / .cc / .cxx<br/>C++ 原生语法"]
         FE_PY[".py<br/>Python 风格"]
         FE_LUA[".lua<br/>Lua 风格"]
         FE_RS[".rs<br/>Rust 风格"]
         FE_LISP[".lisp<br/>Lisp 风格"]
         FE_C["Lexer / Parser"]
+        FE_CPP_P["LexerCpp / ParserCpp"]
         FE_PY_P["LexerPy / ParserPy"]
         FE_LUA_P["LexerLua / ParserLua"]
         FE_RS_P["LexerRs / ParserRs"]
         FE_LISP_P["LexerLisp / ParserLisp"]
         FE_UNI --> FE_C
+        FE_CPP --> FE_CPP_P
         FE_PY --> FE_PY_P
         FE_LUA --> FE_LUA_P
         FE_RS --> FE_RS_P
@@ -92,6 +95,7 @@ flowchart TB
     end
 
     FE_C --> AST
+    FE_CPP_P --> AST
     FE_PY_P --> AST
     FE_LUA_P --> AST
     FE_RS_P --> AST
@@ -136,7 +140,7 @@ flowchart TB
     classDef core fill:#fef3c7,stroke:#d97706,color:#78350f;
     classDef runtime fill:#ede9fe,stroke:#7c3aed,color:#4c1d95;
     classDef backend fill:#dcfce7,stroke:#16a34a,color:#14532d;
-    class FE_UNI,FE_PY,FE_LUA,FE_RS,FE_LISP,FE_C,FE_PY_P,FE_LUA_P,FE_RS_P,FE_LISP_P fe;
+    class FE_UNI,FE_CPP,FE_PY,FE_LUA,FE_RS,FE_LISP,FE_C,FE_CPP_P,FE_PY_P,FE_LUA_P,FE_RS_P,FE_LISP_P fe;
     class AST,TC,CG,IR core;
     class VM,JIT,HEAP runtime;
     class BE_C,BE_CPP,BE_GO,BE_JAR,BE_PY,BE_WASM,TOOL_GCC,TOOL_GPP,TOOL_GO,TOOL_JDK,TOOL_PY,WASM_WAT,WASM_HTML backend;
@@ -160,12 +164,15 @@ flowchart TB
 | --- | --- | --- | --- |
 | `.uni` | `Lexer` / `Parser` | C 风格；`let`、`func`、`if/else`、`while`、数组、字符串 | `examples/test.uni` |
 | `.c` | `Lexer` / `Parser` | 与 `.uni` 共用 C 风格语法，作为 `.c` 入口 | `examples/test.c` |
+| `.cpp` / `.cc` / `.cxx` | `LexerCpp` / `ParserCpp` | C++ 原生子集；`#include`、`using namespace std;`、`int main()`、`cout`/`cin`、类型声明、`if/while/for` | `examples/test_cpp.cpp` |
 | `.py` | `LexerPy` / `ParserPy` | 缩进块、`def`、`elif`、无分号 | `examples/py_demo.py` |
 | `.lua` | `LexerLua` / `ParserLua` | `local`、`print`、表达式 | `examples/test.lua` |
 | `.rs` | `LexerRs` / `ParserRs` | `fn main()`、`let mut`、`println!` | `examples/test.rs` |
 | `.lisp` | `LexerLisp` / `ParserLisp` | S-expression、前缀运算 | `examples/test.lisp` |
 
-> `.uni` 与 `.c` 共用同一套 C 风格 Lexer/Parser；其余前端分别实现各自的词法与语法入口，最终都落到统一 AST 和字节码。所有控制流前端均支持 `break` / `continue`（Lisp 写成 `(break)` / `(continue)`）。
+> `.uni` 与 `.c` 共用同一套 C 风格 Lexer/Parser；`.cpp` 使用独立的 `LexerCpp`/`ParserCpp`，可直接解析带 `#include` 和 `using namespace std;` 的常见 C++ 程序。其余前端分别实现各自的词法与语法入口，最终都落到统一 AST 和字节码。所有控制流前端均支持 `break` / `continue`（Lisp 写成 `(break)` / `(continue)`）。
+
+> C++ 前端是面向 UniVM 类型系统的实用子集：支持整数、`std::string`、函数、控制流、`cout` / `cin`；暂不支持浮点、指针/引用、类和 STL 容器。
 
 ### 后端
 
@@ -234,6 +241,7 @@ javac -encoding UTF-8 -d out src\*.java
 
 ```bat
 java -cp out Main examples\test.uni --run
+java -cp out Main examples\test_cpp.cpp --run
 java -cp out Main examples\control.uni --ir
 java -cp out Main examples\py_demo.py --profile
 ```
@@ -443,6 +451,7 @@ UniVM/
 2. 安装 JDK 21
 3. 编译全部 Java 源码
 4. 运行 `examples/test.uni` 做 CLI 冒烟测试
+5. 运行 `examples/test_cpp.cpp` 验证 C++ 原生前端
 
 这与本地的基础构建命令保持一致：
 
@@ -458,7 +467,7 @@ java -cp out Main examples\test.uni --run
 ```powershell
 .\release.ps1
 # 或指定版本
-.\release.ps1 -Version 1.1.0
+.\release.ps1 -Version 1.1.1
 ```
 
 脚本会：
@@ -468,6 +477,8 @@ java -cp out Main examples\test.uni --run
 3. 把 `src/`、`examples/`、文档和 CLI 启动脚本放入发布目录
 4. 生成 `dist/UniVM-<version>-windows-x64.zip`
 5. 生成对应的 `.sha256` 校验文件
+
+整个发布流程只在本机 PowerShell 中执行，不依赖 GitHub Release。
 
 发布包内容：
 

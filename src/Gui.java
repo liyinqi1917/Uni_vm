@@ -29,7 +29,7 @@ public class Gui {
         sourcePanel.add(browseSource, BorderLayout.EAST);
 
         JComboBox<String> frontendBox = new JComboBox<>(new String[]{
-                "自动识别", ".uni", "C 风格", "Python 风格", "Lua 风格", "Rust 风格", "Lisp 风格"
+                "自动识别", ".uni", "C 风格", "C++ 原生", "Python 风格", "Lua 风格", "Rust 风格", "Lisp 风格"
         });
         JComboBox<String> execModeBox = new JComboBox<>(new String[]{"解释器 + JIT", "解释器（--no-jit）"});
         JCheckBox typeCheckBox = new JCheckBox("启用类型检查", true);
@@ -116,7 +116,7 @@ public class Gui {
         browseSource.addActionListener(e -> {
             JFileChooser chooser = new JFileChooser(".");
             chooser.setFileFilter(new FileNameExtensionFilter(
-                    "Uni/C/Python/Lua/Rust/Lisp 源文件", "uni", "c", "py", "lua", "rs", "lisp"));
+                    "Uni/C/C++/Python/Lua/Rust/Lisp 源文件", "uni", "c", "cpp", "cc", "cxx", "py", "lua", "rs", "lisp"));
             if (chooser.showOpenDialog(frame) == JFileChooser.APPROVE_OPTION) {
                 java.io.File file = chooser.getSelectedFile();
                 sourceField.setText(file.getAbsolutePath());

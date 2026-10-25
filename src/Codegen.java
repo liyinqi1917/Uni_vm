@@ -173,6 +173,8 @@ public class Codegen {
             out.add(new Instruction(str ? Opcode.PRINT_STR : Opcode.PRINT_INT, 0));
         } else if (s instanceof Block) {
             out.addAll(blockNodes((Block) s, m));
+        } else if (s instanceof StmtSeq) {
+            for (Stmt b : ((StmtSeq) s).stmts) genStmt(b, out, m);
         } else if (s instanceof If) {
             If f = (If) s;
             List<BytecodeNode> els = f.els == null ? new ArrayList<>() : stmtNodes(f.els, m);

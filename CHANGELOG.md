@@ -3,6 +3,25 @@
 所有值得记录的改动都会写在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
+## [1.1.1] - 2026-10-25
+
+### Added
+- 独立 C++ 原生前端 `LexerCpp` / `ParserCpp`，支持 `.cpp` / `.cc` / `.cxx`
+- 跳过 `#include` 等预处理行与 `using namespace std;`
+- `int main()`、类型声明、函数、`if/else`、`while`、`for`、`break` / `continue`
+- `cout << ... << endl;` 降级为打印，`cin >> ...` 降级为 `input()` / `toInt()`
+- `examples/test_cpp.cpp`，并验证 VM 与生成的原生 C++ 输出一致
+- `StmtSeq` AST 节点，用于 C++ 多变量声明、`cin` 链和无作用域语句序列
+
+### Changed
+- `Main` 按扩展名分发 C++ 源码到 `LexerCpp` / `ParserCpp`
+- `release.ps1` 默认版本更新为 `1.1.1`，并在结束时打印中文打包完成提示
+- 发布流程仍完全本地执行：`javac` → `jpackage` → `Compress-Archive` → SHA-256
+
+### Fixed
+- `C++ for` 循环降级为 `while` 时，`continue` 前会补执行迭代表达式
+- 本地发布包保留 `src/`、`examples/`、`README.md` 等源码与文档
+
 ## [1.1.0] - 2026-10-25
 
 ### Added

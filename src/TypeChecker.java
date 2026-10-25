@@ -93,6 +93,8 @@ public class TypeChecker {
             enter();
             for (Stmt b : ((Block) s).stmts) stmt(b);
             exit();
+        } else if (s instanceof StmtSeq) {
+            for (Stmt b : ((StmtSeq) s).stmts) stmt(b);
         } else if (s instanceof If) {
             If f = (If) s;
             requireInt(expr(f.cond), "if 条件");
