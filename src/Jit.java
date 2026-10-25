@@ -291,7 +291,10 @@ public class Jit {
         frames.push(first);
 
         int pc = startPc;
+        int stopCheck = 0;
         while (pc < cf.op.length) {
+            // 每 2048 条编译指令检查一次停止请求，避免死循环无法退出。
+            if ((stopCheck++ & 0x7FF) == 0) vm.checkpoint();
             JitOp op = ALL[cf.op[pc]];
             FrameC cur = frames.peek();
             switch (op) {

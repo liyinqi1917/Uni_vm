@@ -27,6 +27,12 @@ public class Main {
 
     // GUI 通过该入口注入 JOptionPane 输入桥；CLI 传 null 使用控制台。
     public static void run(String[] args, Vm.InputProvider inputProvider) throws Exception {
+        run(args, inputProvider, null);
+    }
+
+    // GUI 额外传入 StopToken，用于停止死循环或长时间运行。
+    public static void run(String[] args, Vm.InputProvider inputProvider,
+                           Vm.StopToken stopToken) throws Exception {
         if (args.length == 0) {
             System.out.println("UniVM —— 通用字节码多目标编译器（JVM 架构）");
             System.out.println("用法: java Main <input.uni|input.py|input.c|input.cpp|input.lua|input.rs|input.lisp>");
@@ -86,7 +92,7 @@ public class Main {
             if (a.equals("--profile")) wantProfile = true;
         }
 
-        Vm vm = Vm.create(module, jitEnabled, inputProvider);
+        Vm vm = Vm.create(module, jitEnabled, inputProvider, stopToken);
         boolean didSomething = false;
 
         for (int i = 1; i < args.length; i++) {

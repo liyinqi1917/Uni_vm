@@ -47,6 +47,21 @@ public class Vm {
         String input(String prompt);
     }
 
+    // GUI 的停止按钮通过该令牌通知正在执行的 VM。
+    // 令牌只表示“请求停止”，同一个令牌可以跨 Vm 实例重复使用。
+    public static final class StopToken {
+        private volatile boolean stopped;
+
+        public void stop() { stopped = true; }
+        public boolean isStopped() { return stopped; }
+        public void reset() { stopped = false; }
+    }
+
+    public static class VmStoppedException extends RuntimeException {
+        public VmStoppedException() { super("执行已停止"); }
+        @Override public synchronized Throwable fillInStackTrace() { return this; }
+    }
+
     private static final int OSR_THRESHOLD = 10_000; // while 回边热点阈值
 
     final Module module;
@@ -55,11 +70,13 @@ public class Vm {
     private static final int GC_INTERVAL = 100; // 每 100 次分配触发一次 GC
     private final Deque<Frame> callStack = new ArrayDeque<>();
     private final InputProvider inputProvider;
+    private final StopToken stopToken;
     private BufferedReader consoleIn;
 
-    private Vm(Module module, boolean jitEnabled, InputProvider inputProvider) {
+    private Vm(Module module, boolean jitEnabled, InputProvider inputProvider, StopToken stopToken) {
         this.module = module;
         this.inputProvider = inputProvider;
+        this.stopToken = stopToken;
         // JIT 的槽位/操作数栈是原生 long[]，无法承载 String；
         // 含字符串操作或标准库 SYS_CALL 的模块统一走解释器，
         // 整数/数组模块保持原 JIT 行为。
@@ -70,16 +87,32 @@ public class Vm {
     }
 
     public static Vm create(Module module, boolean jitEnabled) {
-        return new Vm(module, jitEnabled, null);
+        return new Vm(module, jitEnabled, null, null);
     }
 
     public static Vm create(Module module, boolean jitEnabled, InputProvider inputProvider) {
-        return new Vm(module, jitEnabled, inputProvider);
+        return new Vm(module, jitEnabled, inputProvider, null);
+    }
+
+    public static Vm create(Module module, boolean jitEnabled, InputProvider inputProvider, StopToken stopToken) {
+        return new Vm(module, jitEnabled, inputProvider, stopToken);
     }
 
     public Jit jit() { return jit; }
 
+    // 线程中断和显式 StopToken 都能终止死循环；JIT 与解释器共用。
+    public void forceStop() {
+        if (stopToken != null) stopToken.stop();
+    }
+
+    void checkpoint() {
+        if ((stopToken != null && stopToken.isStopped()) || Thread.currentThread().isInterrupted()) {
+            throw new VmStoppedException();
+        }
+    }
+
     public void runMain() {
+        checkpoint();
         Frame mf = new Frame();
         callStack.push(mf);
         try {
@@ -110,6 +143,7 @@ public class Vm {
 
     private void exec(List<BytecodeNode> ns) {
         for (BytecodeNode n : ns) {
+            checkpoint();
             if (n instanceof Instruction) {
                 inst((Instruction) n);
             } else if (n instanceof IfNode) {
@@ -121,6 +155,7 @@ public class Vm {
                 WhileNode w = (WhileNode) n;
                 Frame fr = cur();
                 while (true) {
+                    checkpoint();
                     exec(w.cond);
                     long c = asLong(cur().stack.pop());
                     if (c == 0) break;
@@ -211,6 +246,7 @@ public class Vm {
     // 标准库内置函数。VM 的字符串本来就是 Java String（不经过 Heap 句柄），
     // 因此 readFile 直接压入 String，writeFile 直接消费 String。
     private void sysCall(Instruction ins, Frame f) {
+        checkpoint();
         int argc = (int) ins.operand;
         switch (ins.str) {
             case "time":
@@ -313,6 +349,7 @@ public class Vm {
 
     // 统一调用入口（解释器 / 编译码共用）：计数 → 分层
     public long callByName(String name, long[] vals) {
+        checkpoint();
         Function fn = module.funcs.get(name);
         if (fn == null) throw new RuntimeException("调用了未定义的函数: " + name);
         if (fn.params.size() != vals.length) {
