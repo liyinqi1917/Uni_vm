@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Content-Security-Policy"
+          content="default-src 'self'; script-src 'self' 'unsafe-eval' blob:; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; worker-src 'self' blob:; connect-src 'self'">
+    <title>UniVM Studio</title>
+    <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+<div class="app" id="app">
+    <header class="titlebar" id="titlebar">
+        <div class="titlebar-left">
+            <div class="app-mark" aria-hidden="true">
+                <svg viewBox="0 0 32 32">
+                    <defs>
+                        <linearGradient id="markGradient" x1="0" y1="0" x2="1" y2="1">
+                            <stop offset="0" stop-color="#56d9ff"/>
+                            <stop offset="0.55" stop-color="#2f80ed"/>
+                            <stop offset="1" stop-color="#8f6bff"/>
+                        </linearGradient>
+                    </defs>
+                    <rect x="2" y="2" width="28" height="28" rx="8" fill="url(#markGradient)"/>
+                    <path d="M10.5 9.5v7.2c0 3.5 2.1 5.8 5.5 5.8s5.5-2.3 5.5-5.8V9.5"
+                          fill="none" stroke="#07111c" stroke-width="3.2" stroke-linecap="round"/>
+                    <circle cx="24.5" cy="9" r="2.1" fill="#9df4ff"/>
+                </svg>
+            </div>
+            <span class="app-name">UniVM</span>
+            <span class="app-edition">STUDIO</span>
+            <span class="titlebar-divider"></span>
+            <span class="workspace-chip"><span class="workspace-dot"></span> examples</span>
+        </div>
+        <div class="window-title" id="window-file-label">Welcome</div>
+        <div class="window-controls" aria-label="窗口控制">
+            <button class="window-button" id="window-minimize" type="button" title="最小化" aria-label="最小化">
+                <svg viewBox="0 0 12 12"><path d="M2 6.5h8"/></svg>
+            </button>
+            <button class="window-button" id="window-maximize" type="button" title="最大化" aria-label="最大化">
+                <svg viewBox="0 0 12 12" class="icon-maximize"><rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1"/></svg>
+                <svg viewBox="0 0 12 12" class="icon-restore"><path d="M4 3.3V2.5h5.5V8H8.7"/><rect x="2.5" y="4" width="5.5" height="5.5" rx="1"/></svg>
+            </button>
+            <button class="window-button window-close" id="window-close" type="button" title="关闭" aria-label="关闭">
+                <svg viewBox="0 0 12 12"><path d="M2.7 2.7l6.6 6.6M9.3 2.7L2.7 9.3"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <section class="commandbar">
+        <div class="command-left">
+            <button class="action-button save-button" id="save-button" type="button" title="保存当前文件 (Ctrl+S)" disabled>
+                <svg class="save-glyph" viewBox="0 0 18 18" aria-hidden="true">
+                    <path d="M3 2.5h9l3 3v10H3z"/>
+                    <path d="M5.5 2.8v4h6v-4M5.5 10h7v5.2"/>
+                </svg>
+                <span>Save</span>
+                <kbd>Ctrl</kbd><kbd>S</kbd>
+            </button>
+            <button class="action-button run-button" id="run-button" type="button" title="运行当前编辑器 (F5)">
+                <svg viewBox="0 0 18 18" aria-hidden="true"><path d="M5.5 3.7v10.6L14 9z"/></svg>
+                <span>Run</span>
+                <kbd>F5</kbd>
+            </button>
+            <button class="action-button stop-button" id="stop-button" type="button" title="停止运行 (Shift+F5)" disabled>
+                <svg viewBox="0 0 18 18" aria-hidden="true"><rect x="5" y="5" width="8" height="8" rx="1.4"/></svg>
+                <span>Stop</span>
+                <kbd>Shift</kbd><kbd>F5</kbd>
+            </button>
+            <span class="command-divider"></span>
+            <div class="engine-state" id="engine-state">
+                <span class="engine-dot" id="engine-dot"></span>
+                <span id="engine-label">Java backend ready</span>
+            </div>
+        </div>
+        <div class="command-right">
+            <span class="build-label">Tier 0 + JIT</span>
+            <span class="version-label" id="app-version">v1.2.0</span>
+        </div>
+    </section>
+
+    <div class="workspace">
+        <aside class="explorer">
+            <div class="panel-heading">
+                <span>EXPLORER</span>
+                <div class="panel-actions">
+                    <button class="icon-button" id="refresh-tree" type="button" title="刷新文件树" aria-label="刷新文件树">
+                        <svg viewBox="0 0 18 18"><path d="M14.3 6.1A6.1 6.1 0 1 0 15 9"/><path d="M14.7 2.7v3.8h-3.8"/></svg>
+                    </button>
+                </div>
+            </div>
+            <div class="tree-root-label">
+                <svg class="folder-glyph" viewBox="0 0 18 18" aria-hidden="true"><path d="M2.2 5.1h5l1.3 1.6h7.3v7.7H2.2z"/><path d="M2.2 5.1v8.4"/></svg>
+                <span>examples</span>
+                <span class="tree-count" id="tree-count"></span>
+            </div>
+            <div class="tree-scroll" id="file-tree" role="tree" aria-label="示例文件树"></div>
+            <div class="explorer-footer">
+                <span class="footer-led"></span>
+                <span>Watching ../examples</span>
+            </div>
+        </aside>
+
+        <section class="editor-shell">
+            <div class="tabs-row">
+                <div class="tabs" id="tabs" role="tablist" aria-label="打开的文件"></div>
+                <div class="tabs-tail"></div>
+            </div>
+            <div class="breadcrumbs-row">
+                <div class="breadcrumbs" id="breadcrumbs">
+                    <span class="breadcrumb-muted">examples</span>
+                    <span class="breadcrumb-separator">›</span>
+                    <span class="breadcrumb-active">select a file</span>
+                </div>
+                <span class="editor-brand">MONACO</span>
+            </div>
+            <div class="editor-wrap">
+                <div id="editor" class="editor"></div>
+                <div class="empty-state" id="empty-state">
+                    <div class="empty-mark">
+                        <svg viewBox="0 0 64 64" aria-hidden="true">
+                            <rect x="4" y="4" width="56" height="56" rx="16" fill="none" stroke="url(#emptyGradient)" stroke-width="2"/>
+                            <path d="M22 20v14c0 7 4.4 11 10 11s10-4 10-11V20" fill="none" stroke="url(#emptyGradient)" stroke-width="5" stroke-linecap="round"/>
+                            <defs>
+                                <linearGradient id="emptyGradient" x1="0" y1="0" x2="1" y2="1">
+                                    <stop offset="0" stop-color="#56d9ff"/>
+                                    <stop offset="1" stop-color="#8f6bff"/>
+                                </linearGradient>
+                            </defs>
+                        </svg>
+                    </div>
+                    <h1>Welcome to UniVM Studio</h1>
+                    <p>Select a file from the explorer to start editing.</p>
+                    <span class="empty-hint">F5 run &nbsp;·&nbsp; Shift+F5 stop</span>
+                </div>
+                <div class="loading-overlay" id="loading-overlay">
+                    <div class="loader-ring"></div>
+                    <span>Loading Monaco Editor…</span>
+                </div>
+            </div>
+            <div class="editor-statusbar">
+                <span id="cursor-status">Ln 1, Col 1</span>
+                <span>Spaces: 4</span>
+                <span>UTF-8</span>
+                <span id="language-status">UniVM</span>
+            </div>
+        </section>
+    </div>
+
+    <div class="splitter" id="terminal-splitter" role="separator" aria-label="调整终端高度"></div>
+
+    <section class="terminal-panel" id="terminal-panel">
+        <div class="terminal-heading">
+            <div class="terminal-tabs">
+                <span class="terminal-tab active">TERMINAL</span>
+                <span class="terminal-tab">OUTPUT</span>
+            </div>
+            <div class="terminal-actions">
+                <span class="terminal-state" id="terminal-state">idle</span>
+                <button class="terminal-button" id="copy-terminal" type="button">Copy</button>
+                <button class="terminal-button" id="clear-terminal" type="button">Clear</button>
+            </div>
+        </div>
+        <div class="terminal-body" id="terminal" role="log" aria-live="polite"></div>
+        <div class="terminal-input-row">
+            <span class="terminal-input-prompt">›</span>
+            <input class="terminal-input" id="terminal-input" type="text" autocomplete="off" spellcheck="false"
+                   placeholder="Program stdin is available while running" aria-label="Program standard input" disabled>
+            <span class="terminal-input-hint">STDIN</span>
+        </div>
+    </section>
+
+    <footer class="statusbar">
+        <div class="status-left">
+            <span class="status-brand">UV</span>
+            <span id="status-message">Ready</span>
+        </div>
+        <div class="status-right">
+            <span id="runtime-label">Java 21+</span>
+            <span id="backend-label">UniVM 1.2.0</span>
+            <span class="status-accent" id="platform-label">Windows</span>
+        </div>
+    </footer>
+</div>
+
+<script src="/monaco/min/vs/loader.js"></script>
+<script src="/renderer.js"></script>
+</body>
+</html>

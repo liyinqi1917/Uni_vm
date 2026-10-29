@@ -1,0 +1,29 @@
+{
+  "name": "univm-electron-studio",
+  "version": "1.2.0",
+  "private": true,
+  "description": "UniVM Studio - Electron + Monaco IDE for the UniVM toolchain",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "smoke": "electron . --smoke",
+    "check": "node --check main.js && node --check preload.js && node --check renderer.js"
+  },
+  "keywords": [
+    "univm",
+    "ide",
+    "monaco",
+    "electron"
+  ],
+  "author": "UniVM Project",
+  "license": "MIT",
+  "type": "commonjs",
+  "dependencies": {
+    "electron": "45.0.0",
+    "monaco-editor": "0.57.0"
+  },
+  "overrides": {
+    "dompurify": "3.4.17"
+  }
+}

@@ -46,6 +46,13 @@ UniVM.jar
 .idea/
 *.iml
 
+### Electron IDE ###
+ui-electron/node_modules/
+ui-electron/temp.uni
+ui-electron/dist/
+temp_run.uni
+examples/_smoke_save.uni
+
 ### Compiler generated ###
 test_output.txt
 Gen.java

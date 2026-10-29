@@ -40,9 +40,10 @@ UniVM 面向语言实现、编译原理和运行时工程的学习与研究，�
 - **6 种后端**：C、C++、Go、JAR、Python、WebAssembly
 - **分层执行**：Tier 0 帧式解释器 + Tier 1 热点编译 + OSR 栈上替换
 - **统一运行时**：类型检查、数组、字符串、标准库、保守追踪式 GC
-- **双入口工具链**：命令行 `Main` + 现代化 Swing IDE `Gui`
-- **IDE 级编辑体验**：多文件标签、工作区文件树、行号、语法高亮、注释折叠、格式化与实时状态栏
-- **可中断执行**：运行中可按 `Shift+F5` 中断解释器/JIT，避免死循环锁死界面
+- **多入口工具链**：命令行 `Main` + Electron/Monaco 主 IDE `UniVM Studio` + 备用 Swing IDE `Gui`
+- **IDE 级编辑体验**：多文件标签、工作区文件树、Monaco 语法高亮、自动补全、括号配对、折叠、保存与实时状态栏
+- **流式终端与输入**：Java stdout/stderr 实时回传；终端可直接向 `input()` 发送标准输入
+- **可中断执行**：运行中可按 `Shift+F5` 或 Stop 中断解释器/JIT，避免死循环锁死界面
 - **WebAssembly 链路**：生成 `.wat` 与可直接在浏览器打开的 HTML 测试页
 
 项目不追求“所有语言特性一次性完备”，而是强调**结构清晰、可验证、可扩展**：每一层都有独立职责，每一个后端都能用同一组示例进行输出一致性验证。
@@ -210,7 +211,8 @@ flowchart TB
 
 | 组件 | 说明 |
 | --- | --- |
-| JDK 21+ | 必需；用于编译和运行 CLI/GUI |
+| JDK 21+ | 必需；用于编译和运行 CLI/GUI/Electron 后端 |
+| Node.js 20+ | 可选；运行 Electron/Monaco 前端需要 |
 | `gcc` / `g++` | 可选；C/C++ 后端需要 |
 | Go | 可选；Go 后端需要 |
 | Python | 可选；运行 Python 后端产物需要 |
@@ -218,9 +220,9 @@ flowchart TB
 
 以下命令以 Windows CMD / PowerShell 为例。Unix 环境下将路径分隔符 `\` 改为 `/`。
 
-### Windows 安装包（推荐）
+### Windows 安装包（Swing 备用）
 
-如果只想直接使用 UniVM，运行：
+如果只想直接使用现有 Swing 版本，运行：
 
 ```text
 dist\UniVM-1.2.0-Setup.exe
@@ -229,7 +231,9 @@ dist\UniVM-1.2.0-Setup.exe
 1. 双击 `Setup.exe` 启动安装。
 2. 安装器会把完整运行时放到 `%LOCALAPPDATA%\UniVM`，无需管理员权限。
 3. 自动创建桌面快捷方式 `UniVM` 和开始菜单项。
-4. 安装完成后会弹出提示；双击桌面上的 `UniVM` 图标即可打开 GUI。
+4. 安装完成后会弹出提示；双击桌面上的 `UniVM` 图标即可打开 Swing GUI。
+
+> 当前安装包仍启动 Swing 备用前端。Electron Studio 直接从源码运行，使用下面的 `start-electron.bat` 或 `npm start`。
 
 > 安装包未做代码签名。若 SmartScreen 提示“Windows 已保护你的电脑”，点击“更多信息” → “仍要运行”。
 >
@@ -278,13 +282,44 @@ java -cp out Main examples\py_demo.py --profile
 
 不传后端参数时，`Main` 默认打印字节码并执行。
 
-### 3. 使用 GUI
+### 3. 使用 UniVM Studio（Electron，推荐）
+
+一键启动（先编译 Java，再进入 `ui-electron` 启动 Electron）：
+
+```bat
+start-electron.bat
+```
+
+`start-electron.bat` 会执行 `javac -encoding UTF-8 -d out src\*.java`，在需要时安装 Electron 依赖，然后运行 `npm start`。
+
+手动启动：
+
+```bat
+javac -encoding UTF-8 -d out src\*.java
+cd ui-electron
+npm install
+npm start
+```
+
+![UniVM Studio](docs/electron-studio.png)
+
+核心能力：
+
+- 无边框深色 IDE 布局，Monaco 多标签编辑器，支持语法高亮、自动补全、括号配对、代码折叠与 minimap。
+- 左侧文件树通过 Node.js `fs` 读取 `examples/`，支持目录展开和刷新；点击文件经 IPC 发送到渲染进程打开。
+- Save（`Ctrl+S`）把当前标签写回 `examples/`；Run（`F5`）经 IPC 将源码交给主进程，写入项目根目录 `temp_run.uni`，再执行 `java -cp out Main temp_run.uni --run`。
+- 主进程固定以项目根目录为 `cwd`，因此 `out/` 与 `temp_run.uni` 的相对路径稳定；Java stdout/stderr 实时流回黑色终端。
+- Stop（`Shift+F5`）结束整个 Java 进程树；终端输入栏可将标准输入发送给运行中的 `input()`。
+- 渲染进程启用 `contextIsolation`、`sandbox`，只通过 `preload.js` 暴露受控 IPC。
+- 开发自检：`cd ui-electron && npm run check && npm run smoke`。`smoke` 覆盖加载、文件树点击、保存、`F5`/`Shift+F5`、Run/Stop 按钮和标准输入，并输出报告到 `ui-electron/.smoke/`。
+
+### 4. 使用 Swing GUI（备用）
 
 ```bat
 java -cp out Gui
 ```
 
-GUI 是一个完整的多文件 IDE：
+Swing GUI 是一个完整的多文件 IDE：
 
 - 左侧为工作区文件树，双击文件即可在右侧标签页打开；支持新建、打开、保存、另存为、全部保存和关闭标签。
 - 顶部配置栏可选择前端、执行模式、类型检查、后端和输出目录。
@@ -308,7 +343,7 @@ GUI 是一个完整的多文件 IDE：
 | 性能分析运行 | `Ctrl+Shift+P` |
 | 快捷键一览 | `F1` |
 
-### 4. 使用 WebAssembly 后端
+### 5. 使用 WebAssembly 后端
 
 ```bat
 java -cp out Main examples\test.uni --wasm out\wasm-demo
@@ -453,7 +488,7 @@ JIT/OSR 基准示例位于 `examples/jit.uni` 和 `examples/osr.uni`；仓库历
 UniVM/
 ├─ src/
 │  ├─ Main.java                 # CLI 入口
-│  ├─ Gui.java                  # IDE 主窗口：菜单、工具栏、标签、执行控制
+│  ├─ Gui.java                  # Swing IDE 主窗口（备用前端）
 │  ├─ EditorPane.java           # 行号、语法高亮、撤销、折叠、格式化
 │  ├─ FileTreePanel.java        # 工作区文件树
 │  ├─ CodeFormatter.java        # .uni / .py / .lisp 缩进格式化
@@ -470,7 +505,14 @@ UniVM/
 │  ├─ BackendGo.java / BackendJava.java
 │  ├─ BackendPy.java / BackendWasm.java
 │  └─ StringTypes.java
+├─ ui-electron/                 # UniVM Studio（Electron + Monaco 主前端）
+│  ├─ main.js                   # 窗口、静态服务器、IPC、Java 进程控制
+│  ├─ preload.js                # contextBridge 安全 API
+│  ├─ index.html / styles.css   # IDE 布局与深色主题
+│  ├─ renderer.js               # Monaco、标签页、文件树、终端
+│  └─ assets/                   # 应用图标
 ├─ examples/                    # 多语言、多后端示例
+├─ start-electron.bat           # 一键编译 Java 并启动 Electron Studio
 ├─ build.bat                    # 编译并运行示例
 ├─ package.ps1                  # 本地 jpackage 打包
 ├─ release.ps1                  # 发布 zip + SHA256
@@ -572,6 +614,7 @@ dist/UniVM-<version>-Setup.exe.sha256
 - [x] C / C++ / Go / JAR / Python / WebAssembly 后端
 - [x] GUI 与 WASM 浏览器测试页
 - [x] 现代 IDE：标签页、文件树、语法高亮、折叠、格式化、可中断执行
+- [x] Electron + Monaco 主前端：流式终端、标准输入、文件保存与进程树停止
 - [x] GitHub Actions 编译 CI
 - [ ] 更完整的对象/类模型与精确 GC
 - [ ] 更丰富的标准库与跨语言 FFI

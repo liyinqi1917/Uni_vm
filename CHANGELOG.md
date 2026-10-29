@@ -3,6 +3,22 @@
 所有值得记录的改动都会写在这里。
 格式参考 [Keep a Changelog](https://keepachangelog.com/)。
 
+## [Unreleased]
+
+### Added
+- Electron + Monaco 主前端 `ui-electron/`：无边框深色 IDE、多标签编辑、语法高亮、自动补全、括号配对与代码折叠
+- 通过 Node.js `fs` 读取 `examples/` 的工作区文件树，经 IPC 读取文件并在 Monaco 中打开
+- Java 运行链路：源码写入项目根目录 `temp_run.uni`，以项目根目录为 `cwd` 执行 `java -cp out Main temp_run.uni --run`
+- stdout/stderr 实时流式终端，支持直接向 `input()` 发送标准输入
+- Run（`F5`）/ Stop（`Shift+F5`）工具栏按钮，Stop 会结束整个 Java 进程树
+- Save（`Ctrl+S`）按钮，将当前标签内容写回 `examples/`
+- `start-electron.bat`：一键编译 Java 后端、安装依赖并启动 Electron Studio
+- `npm run smoke`：自动验证 Monaco、文件树、保存、快捷键、Run/Stop 与标准输入，并生成截图和 JSON 报告
+
+### Changed
+- Electron Studio 成为推荐主前端；Swing `Gui` 保留为备用前端，Windows 安装包仍启动 Swing
+- 渲染进程使用 `contextIsolation`、`sandbox` 和受控 `preload.js` IPC
+
 ## [1.2.0] - 2026-10-25
 
 ### Added
